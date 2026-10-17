@@ -11,6 +11,7 @@ interface TitleBarProps {
   query: string;
   onQueryChange: (value: string) => void;
   onNewFolder: () => void;
+  onUpload: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
   user?: UserProfile | null;
@@ -25,6 +26,7 @@ export function TitleBar({
   query,
   onQueryChange,
   onNewFolder,
+  onUpload,
   theme,
   onToggleTheme,
   user,
@@ -88,6 +90,11 @@ export function TitleBar({
       <button type="button" className="btn-accent" onClick={onNewFolder}>
         <Icon name="plus" size={13} />
         新建
+      </button>
+
+      <button type="button" className="btn-ghost" onClick={onUpload}>
+        <Icon name="arrow-up" size={13} />
+        上传
       </button>
 
       <button

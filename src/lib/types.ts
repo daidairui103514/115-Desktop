@@ -71,6 +71,12 @@ export interface OpResult {
   message: string;
 }
 
+export interface UploadResult {
+  file_name: string;
+  size_text: string;
+  instant: boolean;
+}
+
 export interface RecycleItem {
   id: string;
   name: string;

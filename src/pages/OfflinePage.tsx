@@ -6,7 +6,7 @@ interface OfflinePageProps {
   error?: string;
 }
 
-const STATUS_TEXT: Record<number, string> = {
+const STATUS_TEXT: Record<string, string> = {
   "-1": "失败",
   "0": "分配中",
   "1": "下载中",

@@ -103,7 +103,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn client() -> Result<reqwest::Client, String> {
+pub(crate) fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(UA)
         .timeout(std::time::Duration::from_secs(25))
@@ -112,7 +112,7 @@ fn client() -> Result<reqwest::Client, String> {
 }
 
 /// 把 reqwest 的错误拆到底层，方便定位是 DNS、TLS 还是代理的问题
-fn net_err(prefix: &str, err: reqwest::Error) -> String {
+pub(crate) fn net_err(prefix: &str, err: reqwest::Error) -> String {
     let mut msg = format!("{prefix}: {err}");
     if err.is_timeout() {
         msg.push_str("\n（请求超时）");
@@ -170,7 +170,7 @@ fn clear_tokens(data_dir: &Path) {
     let _ = std::fs::remove_file(token_path(data_dir));
 }
 
-fn err_message(body: &Value, fallback: &str) -> String {
+pub(crate) fn err_message(body: &Value, fallback: &str) -> String {
     body.get("message")
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
@@ -178,7 +178,7 @@ fn err_message(body: &Value, fallback: &str) -> String {
         .to_string()
 }
 
-fn is_ok(body: &Value) -> bool {
+pub(crate) fn is_ok(body: &Value) -> bool {
     match body.get("state") {
         Some(Value::Bool(v)) => *v,
         Some(Value::Number(n)) => n.as_i64() == Some(1),
@@ -194,7 +194,7 @@ fn is_ok(body: &Value) -> bool {
 
 /// access_token 过期前 60 秒自动刷新。
 /// ⚠️ 115 的 refresh_token 每次刷新都会轮换，刷新后必须立刻落盘。
-async fn ensure_access(data_dir: &Path, tokens: &mut TokenSet) -> Result<(), String> {
+pub(crate) async fn ensure_access(data_dir: &Path, tokens: &mut TokenSet) -> Result<(), String> {
     if tokens.expires_at > now_ms() + 60_000 {
         return Ok(());
     }
@@ -271,7 +271,7 @@ async fn throttle() {
     }
 }
 
-async fn api_get(
+pub(crate) async fn api_get(
     state: &tauri::State<'_, AppState>,
     path: &str,
     query: Vec<(&str, String)>,
@@ -307,7 +307,7 @@ async fn api_get(
     Ok(body.get("data").cloned().unwrap_or(Value::Null))
 }
 
-async fn api_post(
+pub(crate) async fn api_post(
     state: &tauri::State<'_, AppState>,
     path: &str,
     form: Vec<(&str, String)>,

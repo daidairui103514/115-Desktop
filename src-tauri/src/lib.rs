@@ -1,4 +1,5 @@
 mod api115;
+mod upload;
 
 use std::path::PathBuf;
 use tauri::{
@@ -53,6 +54,7 @@ pub fn run() {
             api115::recycle_list,
             api115::recycle_revert,
             api115::recycle_clear,
+            upload::upload_file,
         ])
         .setup(move |app| {
             // 无边框但**不透明**：Windows 上透明窗口会带来白屏、无阴影、

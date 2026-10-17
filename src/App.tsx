@@ -22,6 +22,7 @@ import type {
   OfflineTask,
   OpResult,
   RecycleItem,
+  UploadResult,
   SortDir,
   SortKey,
   ThemeMode,
@@ -149,6 +150,8 @@ export default function App() {
     }
   }, []);
 
+  const refresh = useCallback(() => loadDir(currentCid), [loadDir, currentCid]);
+
   const loadOffline = useCallback(async () => {
     setLoading(true);
     setLoadError("");
@@ -229,6 +232,27 @@ export default function App() {
     setPhase("ready");
   }, []);
 
+  const handleUpload = useCallback(async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({ multiple: false, directory: false });
+      if (!selected || typeof selected !== "string") return;
+      notify("正在上传，文件较大时需要等待…");
+      const result = await call<UploadResult>("upload_file", {
+        path: selected,
+        cid: currentCid,
+      });
+      await refresh();
+      notify(
+        result.instant
+          ? `${result.file_name} 命中秒传，已入库`
+          : `${result.file_name}（${result.size_text}）上传完成`,
+      );
+    } catch (err) {
+      notify(String(err));
+    }
+  }, [currentCid, notify, refresh]);
+
   const handleLogout = useCallback(async () => {
     try {
       await call("logout");
@@ -242,8 +266,6 @@ export default function App() {
     setStack([ROOT]);
     setPhase("guest");
   }, []);
-
-  const refresh = useCallback(() => loadDir(currentCid), [loadDir, currentCid]);
 
   /* ---------- 选择 ---------- */
   const handleSelect = useCallback((id: string, additive: boolean) => {
@@ -517,6 +539,7 @@ export default function App() {
         query={query}
         onQueryChange={setQuery}
         onNewFolder={() => setDialog({ type: "mkdir" })}
+        onUpload={() => void handleUpload()}
         theme={resolvedTheme}
         onToggleTheme={toggleTheme}
         user={user}
