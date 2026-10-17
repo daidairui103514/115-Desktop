@@ -5,9 +5,11 @@ import { Inspector } from "@/components/Inspector";
 import { TransferBar } from "@/components/TransferBar";
 import { ContextMenu, type MenuAction } from "@/components/ContextMenu";
 import { ConfirmDialog, PromptDialog } from "@/components/Dialogs";
+import { FolderPicker } from "@/components/FolderPicker";
 import { FilesPage } from "@/pages/FilesPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { OfflinePage } from "@/pages/OfflinePage";
+import { RecyclePage } from "@/pages/RecyclePage";
 import { WindowResizer } from "@/components/WindowResizer";
 import { MOCK_FILES } from "@/lib/mock";
 import { call, isTauri, toFileItem } from "@/lib/bridge";
@@ -18,6 +20,7 @@ import type {
   NavKey,
   OfflineTask,
   OpResult,
+  RecycleItem,
   SortDir,
   SortKey,
   ThemeMode,
@@ -50,7 +53,6 @@ const NAV_MODE: Partial<Record<NavKey, DataMode>> = {
 
 const NAV_NOTICE: Partial<Record<NavKey, string>> = {
   shares: "115 开放平台没有开放分享接口，这个功能暂时做不了。\n需要生成分享链接只能在网页版或官方客户端操作。",
-  trash: "回收站接口尚未接入界面。",
   downloads: "下载管理还没做。",
   media: "海报墙媒体库还没做。",
   toolbox: "工具箱还没做（ED2K 生成、STRM 导出、排重、空目录清理）。",
@@ -62,6 +64,8 @@ type DialogState =
   | { type: "rename"; item: FileItem }
   | { type: "mkdir" }
   | { type: "delete"; items: FileItem[] }
+  | { type: "move"; items: FileItem[] }
+  | { type: "copy"; items: FileItem[] }
   | null;
 
 function compareFiles(a: FileItem, b: FileItem, key: SortKey): number {
@@ -87,6 +91,8 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [entries, setEntries] = useState<FileItem[]>([]);
   const [offline, setOffline] = useState<OfflineTask[]>([]);
+  const [recycle, setRecycle] = useState<RecycleItem[]>([]);
+  const [recycleBusy, setRecycleBusy] = useState(false);
   const [stack, setStack] = useState<{ cid: string; name: string }[]>([ROOT]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -155,6 +161,18 @@ export default function App() {
     }
   }, []);
 
+  const loadRecycle = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      setRecycle(await call<RecycleItem[]>("recycle_list"));
+    } catch (err) {
+      setLoadError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!desktop) return;
     let cancelled = false;
@@ -187,6 +205,8 @@ export default function App() {
       void loadDir("0", mode);
     } else if (nav === "offline") {
       void loadOffline();
+    } else if (nav === "trash") {
+      void loadRecycle();
     }
     setSelectedIds([]);
     setQuery("");
@@ -348,6 +368,61 @@ export default function App() {
     }
   }, [dialog, notify, refresh]);
 
+  const submitMoveOrCopy = useCallback(
+    async (targetCid: string) => {
+      if (dialog?.type !== "move" && dialog?.type !== "copy") return;
+      setBusy(true);
+      try {
+        const fids = dialog.items.map((item) => item.id);
+        const command = dialog.type === "move" ? "move_files" : "copy_files";
+        const result = await call<OpResult>(command, { fids, toCid: targetCid });
+        setDialog(null);
+        setSelectedIds([]);
+        if (dialog.type === "move") await refresh();
+        notify(
+          result.fail > 0
+            ? `${dialog.type === "move" ? "移动" : "复制"}完成 ${result.ok} 项，失败 ${result.fail} 项：${result.message}`
+            : `已${dialog.type === "move" ? "移动" : "复制"} ${result.ok} 项`,
+        );
+      } catch (err) {
+        notify(String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [dialog, notify, refresh],
+  );
+
+  const restoreItem = useCallback(
+    async (item: RecycleItem) => {
+      setRecycleBusy(true);
+      try {
+        await call("recycle_revert", { tid: item.id });
+        await loadRecycle();
+        notify("已还原");
+      } catch (err) {
+        notify(String(err));
+      } finally {
+        setRecycleBusy(false);
+      }
+    },
+    [loadRecycle, notify],
+  );
+
+  const clearRecycle = useCallback(async () => {
+    if (!window.confirm("确定清空回收站？清空后无法恢复。")) return;
+    setRecycleBusy(true);
+    try {
+      await call("recycle_clear");
+      await loadRecycle();
+      notify("回收站已清空");
+    } catch (err) {
+      notify(String(err));
+    } finally {
+      setRecycleBusy(false);
+    }
+  }, [loadRecycle, notify]);
+
   const menuItems = useMemo<MenuAction[]>(() => {
     if (!menu) return [];
     const item = menu.item;
@@ -362,6 +437,15 @@ export default function App() {
     if (item.pickCode) {
       actions.push({ label: "复制下载直链", onClick: () => void copyDownloadUrl(item) });
     }
+    const targets = selectedItems.length > 0 ? selectedItems : [item];
+    actions.push({
+      label: "移动到…",
+      onClick: () => setDialog({ type: "move", items: targets }),
+    });
+    actions.push({
+      label: "复制到…",
+      onClick: () => setDialog({ type: "copy", items: targets }),
+    });
     actions.push({
       label: "重命名",
       onClick: () => setDialog({ type: "rename", item }),
@@ -372,7 +456,7 @@ export default function App() {
       onClick: () => setDialog({ type: "delete", items: [item] }),
     });
     return actions;
-  }, [menu, openFolder, playItem, copyDownloadUrl]);
+  }, [menu, openFolder, playItem, copyDownloadUrl, selectedItems]);
 
   const selectedFile = selectedItems.length === 1 ? selectedItems[0] : null;
 
@@ -444,6 +528,15 @@ export default function App() {
 
         {nav === "offline" ? (
           <OfflinePage tasks={offline} loading={loading} error={loadError} />
+        ) : nav === "trash" ? (
+          <RecyclePage
+            items={recycle}
+            loading={loading}
+            error={loadError}
+            busy={recycleBusy}
+            onRestore={(item) => void restoreItem(item)}
+            onClear={() => void clearRecycle()}
+          />
         ) : (
           <FilesPage
             path={nav === "files" ? stack.map((s) => s.name) : [NAV_TITLE[nav]]}
@@ -504,6 +597,18 @@ export default function App() {
           danger
           busy={busy}
           onConfirm={() => void submitDelete()}
+          onCancel={() => setDialog(null)}
+        />
+      ) : null}
+
+      {dialog?.type === "move" || dialog?.type === "copy" ? (
+        <FolderPicker
+          title={dialog.type === "move" ? "移动到" : "复制到"}
+          confirmText={dialog.type === "move" ? "移动到这里" : "复制到这里"}
+          excludeCid={currentCid}
+          busy={busy}
+          hint={`已选 ${dialog.items.length} 项`}
+          onPick={(cid) => void submitMoveOrCopy(cid)}
           onCancel={() => setDialog(null)}
         />
       ) : null}

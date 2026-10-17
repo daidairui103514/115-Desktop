@@ -71,6 +71,14 @@ export interface OpResult {
   message: string;
 }
 
+export interface RecycleItem {
+  id: string;
+  name: string;
+  size_text: string;
+  is_dir: boolean;
+  delete_time: number;
+}
+
 export interface FilePage {
   cid: string;
   total: number;

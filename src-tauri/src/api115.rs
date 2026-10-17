@@ -967,10 +967,19 @@ pub async fn video_play_url(
 
 // ── 命令：回收站 ────────────────────────────────────────
 
+#[derive(Serialize)]
+pub struct RecycleItem {
+    pub id: String,
+    pub name: String,
+    pub size_text: String,
+    pub is_dir: bool,
+    pub delete_time: i64,
+}
+
 #[tauri::command]
 pub async fn recycle_list(
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<Value>, String> {
+) -> Result<Vec<RecycleItem>, String> {
     let data = api_get(
         &state,
         "/open/rb/list",
@@ -978,11 +987,57 @@ pub async fn recycle_list(
     )
     .await?;
 
-    Ok(data
+    let arr = data
         .as_array()
         .cloned()
         .or_else(|| data.get("data").and_then(Value::as_array).cloned())
-        .unwrap_or_default())
+        .unwrap_or_default();
+
+    Ok(arr
+        .iter()
+        .map(|item| {
+            // 开放平台各版本回收站字段命名不统一，这里按优先级逐个尝试
+            let pick_str = |keys: &[&str]| -> String {
+                for key in keys {
+                    if let Some(value) = item.get(*key) {
+                        if let Some(text) = value.as_str() {
+                            if !text.is_empty() {
+                                return text.to_string();
+                            }
+                        }
+                        if let Some(num) = value.as_i64() {
+                            return num.to_string();
+                        }
+                    }
+                }
+                String::new()
+            };
+            let pick_num = |keys: &[&str]| -> u64 {
+                for key in keys {
+                    if let Some(value) = item.get(*key) {
+                        if let Some(num) = value.as_u64() {
+                            return num;
+                        }
+                        if let Some(num) = value.as_str().and_then(|text| text.parse().ok()) {
+                            return num;
+                        }
+                    }
+                }
+                0
+            };
+
+            let type_flag = pick_str(&["type", "isdir"]);
+            let is_dir = type_flag == "0" || type_flag == "true" || pick_num(&["isdir"]) == 1;
+
+            RecycleItem {
+                id: pick_str(&["id", "tid", "file_id", "fid"]),
+                name: pick_str(&["file_name", "name", "n", "fn"]),
+                size_text: human_size(pick_num(&["file_size", "size", "fs", "s"])),
+                is_dir,
+                delete_time: pick_num(&["delete_time", "dtime", "t", "rtime"]) as i64,
+            }
+        })
+        .collect())
 }
 
 #[tauri::command]
