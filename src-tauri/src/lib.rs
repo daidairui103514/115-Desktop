@@ -30,6 +30,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(api115::AppState::new(data_dir.clone()))
         .invoke_handler(tauri::generate_handler![
+            api115::login_with_token,
             api115::qr_start,
             api115::qr_poll,
             api115::auth_status,

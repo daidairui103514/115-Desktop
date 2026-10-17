@@ -1,14 +1,17 @@
-//! 115 网盘 Web API 封装。
+//! 115 网盘接口封装。
 //!
-//! 走的是网页端扫码登录 + Cookie 认证（UID / CID / SEID / KID），
-//! 不使用开放平台 OAuth，普通账号即可登录。
+//! 支持两种凭证：
+//! 1. **开放平台 Token**（`access_token` / `refresh_token`）—— 走 `proapi.115.com`，
+//!    适合已有授权令牌的场景（例如从 OpenList 复制）。
+//! 2. **网页版 Cookie**（扫码登录得到 UID/CID/SEID/KID）—— 走 `webapi.115.com`。
 //!
-//! 所有请求都在 Rust 侧发出，因此不受 WebView 的 CORS 限制；
-//! Cookie 由本模块自行管理与持久化，不写系统 Cookie 存储。
+//! 所有请求都在 Rust 侧发出，不受 WebView 的 CORS 限制；
+//! 凭证由本模块自行管理并持久化到程序目录，不写系统 Cookie 存储。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -22,19 +25,33 @@ const QR_TOKEN: &str = "https://qrcodeapi.115.com/api/1.0/web/1.0/token";
 const QR_IMAGE: &str = "https://qrcodeapi.115.com/api/1.0/web/1.0/qrcode";
 const QR_STATUS: &str = "https://qrcodeapi.115.com/get/status/";
 const WEBAPI: &str = "https://webapi.115.com";
+const PROAPI: &str = "https://proapi.115.com";
+const PASSPORT: &str = "https://passportapi.115.com";
 
-/// 参与认证的 Cookie 键，其余（统计类）忽略
 const AUTH_KEYS: [&str; 4] = ["UID", "CID", "SEID", "KID"];
+
+// ── 状态 ────────────────────────────────────────────────
 
 pub struct AppState {
     pub data_dir: PathBuf,
-    pub session: Mutex<Option<Session>>,
+    pub credential: Mutex<Option<Credential>>,
     pub user: Mutex<Option<UserProfile>>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub enum Credential {
+    /// 扫码得到的网页 Cookie
+    Cookie(HashMap<String, String>),
+    /// 开放平台令牌
+    Token(TokenSet),
+}
+
 #[derive(Clone, Serialize, Deserialize, Default)]
-pub struct Session {
-    pub cookies: HashMap<String, String>,
+pub struct TokenSet {
+    pub access_token: String,
+    pub refresh_token: String,
+    /// unix 毫秒
+    pub expires_at: i64,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -47,6 +64,8 @@ pub struct UserProfile {
     pub space_remain: Option<String>,
     pub space_total_bytes: u64,
     pub space_used_bytes: u64,
+    /// 当前凭证来源：cookie / token
+    pub login_method: String,
 }
 
 #[derive(Serialize)]
@@ -54,7 +73,7 @@ pub struct QrInfo {
     pub uid: String,
     pub time: u64,
     pub sign: String,
-    /// data:image/png;base64,... —— 前端直接放进 <img>
+    /// data:image/png;base64,...
     pub image: String,
 }
 
@@ -84,7 +103,7 @@ pub struct FileEntry {
     pub modified: i64,
     pub pick_code: String,
     pub sha1: String,
-    /// 文件分类：0 未知 / 1 文档 / 2 图片 / 3 音频 / 4 视频 / 5 压缩包
+    /// 0 未知 / 1 文档 / 2 图片 / 3 音频 / 4 视频 / 5 压缩包
     pub category: String,
 }
 
@@ -95,6 +114,15 @@ pub struct FilePage {
     pub entries: Vec<FileEntry>,
 }
 
+// ── 工具 ────────────────────────────────────────────────
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(UA)
@@ -103,30 +131,12 @@ fn client() -> Result<reqwest::Client, String> {
         .map_err(|e| format!("无法创建 HTTP 客户端: {e}"))
 }
 
-fn cookie_header(session: &Session) -> String {
-    session
-        .cookies
+fn cookie_header(cookies: &HashMap<String, String>) -> String {
+    cookies
         .iter()
         .map(|(k, v)| format!("{k}={v}"))
         .collect::<Vec<_>>()
         .join("; ")
-}
-
-/// 从 Set-Cookie 头里抽取登录态，兼容一个响应下发多条 Cookie 的情况
-fn extract_auth_cookies(headers: &reqwest::header::HeaderMap) -> HashMap<String, String> {
-    let mut out = HashMap::new();
-    for value in headers.get_all(reqwest::header::SET_COOKIE).iter() {
-        let Ok(raw) = value.to_str() else { continue };
-        for part in raw.split(',') {
-            let pair = part.split(';').next().unwrap_or("").trim();
-            let Some((k, v)) = pair.split_once('=') else { continue };
-            let key = k.trim();
-            if AUTH_KEYS.contains(&key) && !v.trim().is_empty() {
-                out.insert(key.to_string(), v.trim().to_string());
-            }
-        }
-    }
-    out
 }
 
 fn human_size(bytes: u64) -> String {
@@ -147,26 +157,143 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
-fn session_path(data_dir: &Path) -> PathBuf {
+fn extract_auth_cookies(headers: &reqwest::header::HeaderMap) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for value in headers.get_all(reqwest::header::SET_COOKIE).iter() {
+        let Ok(raw) = value.to_str() else { continue };
+        for part in raw.split(',') {
+            let pair = part.split(';').next().unwrap_or("").trim();
+            let Some((k, v)) = pair.split_once('=') else { continue };
+            let key = k.trim();
+            if AUTH_KEYS.contains(&key) && !v.trim().is_empty() {
+                out.insert(key.to_string(), v.trim().to_string());
+            }
+        }
+    }
+    out
+}
+
+fn credential_path(data_dir: &Path) -> PathBuf {
     data_dir.join("session.json")
 }
 
-fn persist_session(data_dir: &Path, session: &Session) {
-    if let Ok(text) = serde_json::to_string_pretty(session) {
-        let _ = std::fs::write(session_path(data_dir), text);
+fn persist(data_dir: &Path, credential: &Credential) {
+    if let Ok(text) = serde_json::to_string_pretty(credential) {
+        let _ = std::fs::write(credential_path(data_dir), text);
     }
 }
 
-fn read_session(data_dir: &Path) -> Option<Session> {
-    let text = std::fs::read_to_string(session_path(data_dir)).ok()?;
-    serde_json::from_str::<Session>(&text).ok()
+fn read_credential(data_dir: &Path) -> Option<Credential> {
+    let text = std::fs::read_to_string(credential_path(data_dir)).ok()?;
+    serde_json::from_str::<Credential>(&text).ok()
 }
 
-fn clear_session(data_dir: &Path) {
-    let _ = std::fs::remove_file(session_path(data_dir));
+fn clear_credential(data_dir: &Path) {
+    let _ = std::fs::remove_file(credential_path(data_dir));
 }
 
-// ── 命令 ────────────────────────────────────────────────
+fn take_credential(state: &tauri::State<'_, AppState>) -> Option<Credential> {
+    state.credential.lock().ok().and_then(|g| g.clone())
+}
+
+fn store_credential(state: &tauri::State<'_, AppState>, credential: Credential) {
+    persist(&state.data_dir, &credential);
+    if let Ok(mut guard) = state.credential.lock() {
+        *guard = Some(credential);
+    }
+}
+
+fn err_message(body: &Value, fallback: &str) -> String {
+    body.get("message")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn is_ok(body: &Value) -> bool {
+    match body.get("state") {
+        Some(Value::Bool(v)) => *v,
+        Some(Value::Number(n)) => n.as_i64() == Some(1),
+        _ => body
+            .get("code")
+            .and_then(Value::as_i64)
+            .map(|c| c == 0 || c == 200)
+            .unwrap_or(false),
+    }
+}
+
+// ── 令牌管理 ────────────────────────────────────────────
+
+/// access_token 过期前 60 秒自动刷新；refresh_token 每次刷新都会轮换，必须立刻落盘。
+async fn ensure_access(http: &reqwest::Client, tokens: &mut TokenSet) -> Result<(), String> {
+    if tokens.expires_at > now_ms() + 60_000 {
+        return Ok(());
+    }
+    if tokens.refresh_token.is_empty() {
+        return Err("access_token 已过期，且没有填写 refresh_token".into());
+    }
+
+    let resp = http
+        .post(format!("{PASSPORT}/open/refreshToken"))
+        .form(&[("refresh_token", tokens.refresh_token.as_str())])
+        .send()
+        .await
+        .map_err(|e| format!("刷新令牌请求失败: {e}"))?;
+
+    let body: Value = resp.json().await.map_err(|e| format!("刷新响应解析失败: {e}"))?;
+    if !is_ok(&body) {
+        return Err(err_message(&body, "refresh_token 已失效，需要重新授权"));
+    }
+
+    let data = body.get("data").ok_or("刷新响应缺少 data")?;
+    let access = data
+        .get("access_token")
+        .and_then(Value::as_str)
+        .ok_or("刷新响应缺少 access_token")?;
+
+    tokens.access_token = access.to_string();
+    if let Some(next_refresh) = data.get("refresh_token").and_then(Value::as_str) {
+        if !next_refresh.is_empty() {
+            tokens.refresh_token = next_refresh.to_string();
+        }
+    }
+    let expires_in = data.get("expires_in").and_then(Value::as_u64).unwrap_or(7200);
+    tokens.expires_at = now_ms() + expires_in as i64 * 1000;
+
+    Ok(())
+}
+
+// ── 命令：登录 ──────────────────────────────────────────
+
+#[tauri::command]
+pub async fn login_with_token(
+    access: String,
+    refresh: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<UserProfile, String> {
+    let access = access.trim().to_string();
+    if access.is_empty() {
+        return Err("请填写 access_token".into());
+    }
+
+    let tokens = TokenSet {
+        access_token: access,
+        refresh_token: refresh.trim().to_string(),
+        expires_at: now_ms() + 7200_000,
+    };
+
+    let http = client()?;
+    let mut probe = tokens.clone();
+    let profile = fetch_pro_profile(&http, &mut probe).await?;
+
+    store_credential(&state, Credential::Token(probe));
+    if let Ok(mut guard) = state.user.lock() {
+        *guard = Some(profile.clone());
+    }
+
+    Ok(profile)
+}
 
 #[tauri::command]
 pub async fn qr_start() -> Result<QrInfo, String> {
@@ -179,11 +306,8 @@ pub async fn qr_start() -> Result<QrInfo, String> {
         .map_err(|e| format!("获取二维码失败: {e}"))?;
 
     let body: Value = resp.json().await.map_err(|e| format!("解析响应失败: {e}"))?;
-    if body.get("state").and_then(Value::as_i64) != Some(1) {
-        return Err(format!(
-            "获取二维码被拒绝: {}",
-            body.get("message").and_then(Value::as_str).unwrap_or("未知错误")
-        ));
+    if !is_ok(&body) {
+        return Err(err_message(&body, "获取二维码被拒绝"));
     }
 
     let data = body.get("data").ok_or("响应缺少 data")?;
@@ -195,7 +319,6 @@ pub async fn qr_start() -> Result<QrInfo, String> {
         return Err("二维码参数不完整".into());
     }
 
-    // 官方二维码图片
     let img_resp = http
         .get(QR_IMAGE)
         .query(&[("uid", uid.as_str())])
@@ -262,18 +385,12 @@ pub async fn qr_poll(
         return Err("扫码已确认，但没有拿到登录凭证，请重试".into());
     }
 
-    let session = Session { cookies };
-    persist_session(&state.data_dir, &session);
+    store_credential(&state, Credential::Cookie(cookies.clone()));
 
-    if let Ok(mut guard) = state.session.lock() {
-        *guard = Some(session.clone());
-    }
-
-    // 顺手拉一次用户信息，失败不影响登录
-    if let Ok(profile) = fetch_profile(&http, &session).await {
-        if let Ok(mut guard) = state.user.lock() {
-            *guard = Some(profile);
-        }
+    let mut profile = fetch_web_profile(&http, &cookies).await.unwrap_or_default();
+    profile.login_method = "cookie".into();
+    if let Ok(mut guard) = state.user.lock() {
+        *guard = Some(profile);
     }
 
     Ok(PollResult {
@@ -285,75 +402,59 @@ pub async fn qr_poll(
 
 #[tauri::command]
 pub async fn auth_status(state: tauri::State<'_, AppState>) -> Result<AuthStatus, String> {
-    let session = state
-        .session
-        .lock()
-        .ok()
-        .and_then(|g| g.clone())
-        .or_else(|| read_session(&state.data_dir));
+    let credential = take_credential(&state).or_else(|| read_credential(&state.data_dir));
 
-    let Some(session) = session else {
+    let Some(mut credential) = credential else {
         return Ok(AuthStatus {
             logged_in: false,
             user: None,
         });
     };
 
-    // 用一次真实请求验证 Cookie 是否还有效
     let http = client()?;
-    let ok = match http
-        .get(format!("{WEBAPI}/files"))
-        .query(&[
-            ("aid", "1"),
-            ("cid", "0"),
-            ("limit", "1"),
-            ("show_dir", "1"),
-            ("format", "json"),
-        ])
-        .header(reqwest::header::COOKIE, cookie_header(&session))
-        .header(reqwest::header::REFERER, REFERER)
-        .send()
-        .await
-    {
-        Ok(resp) => match resp.json::<Value>().await {
-            Ok(body) => body.get("state").and_then(Value::as_bool).unwrap_or(false),
-            Err(_) => false,
+    let profile = match &mut credential {
+        Credential::Token(tokens) => match fetch_pro_profile(&http, tokens).await {
+            Ok(mut p) => {
+                p.login_method = "token".into();
+                store_credential(&state, Credential::Token(tokens.clone()));
+                Some(p)
+            }
+            Err(_) => None,
         },
-        Err(_) => false,
+        Credential::Cookie(cookies) => match fetch_web_profile(&http, cookies).await {
+            Ok(mut p) => {
+                p.login_method = "cookie".into();
+                Some(p)
+            }
+            Err(_) => None,
+        },
     };
 
-    if !ok {
-        clear_session(&state.data_dir);
-        if let Ok(mut guard) = state.session.lock() {
+    let Some(profile) = profile else {
+        clear_credential(&state.data_dir);
+        if let Ok(mut guard) = state.credential.lock() {
             *guard = None;
         }
         return Ok(AuthStatus {
             logged_in: false,
             user: None,
         });
-    }
+    };
 
-    if let Ok(mut guard) = state.session.lock() {
-        *guard = Some(session.clone());
-    }
-
-    let profile = fetch_profile(&http, &session).await.ok();
-    if let Some(p) = &profile {
-        if let Ok(mut guard) = state.user.lock() {
-            *guard = Some(p.clone());
-        }
+    if let Ok(mut guard) = state.user.lock() {
+        *guard = Some(profile.clone());
     }
 
     Ok(AuthStatus {
         logged_in: true,
-        user: profile,
+        user: Some(profile),
     })
 }
 
 #[tauri::command]
 pub async fn logout(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    clear_session(&state.data_dir);
-    if let Ok(mut guard) = state.session.lock() {
+    clear_credential(&state.data_dir);
+    if let Ok(mut guard) = state.credential.lock() {
         *guard = None;
     }
     if let Ok(mut guard) = state.user.lock() {
@@ -362,6 +463,8 @@ pub async fn logout(state: tauri::State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// ── 命令：文件 ──────────────────────────────────────────
+
 #[tauri::command]
 pub async fn list_files(
     cid: String,
@@ -369,19 +472,75 @@ pub async fn list_files(
     limit: u64,
     state: tauri::State<'_, AppState>,
 ) -> Result<FilePage, String> {
-    let session = state
-        .session
-        .lock()
-        .ok()
-        .and_then(|g| g.clone())
-        .ok_or("尚未登录")?;
-
+    let mut credential = take_credential(&state).ok_or("尚未登录")?;
     let http = client()?;
+
+    let page = match &mut credential {
+        Credential::Token(tokens) => {
+            ensure_access(&http, tokens).await?;
+            let page = list_pro(&http, tokens, &cid, offset, limit).await?;
+            store_credential(&state, Credential::Token(tokens.clone()));
+            page
+        }
+        Credential::Cookie(cookies) => list_web(&http, cookies, &cid, offset, limit).await?,
+    };
+
+    Ok(page)
+}
+
+async fn list_pro(
+    http: &reqwest::Client,
+    tokens: &TokenSet,
+    cid: &str,
+    offset: u64,
+    limit: u64,
+) -> Result<FilePage, String> {
+    let resp = http
+        .get(format!("{PROAPI}/open/ufile/files"))
+        .query(&[
+            ("cid", cid),
+            ("offset", &offset.to_string()),
+            ("limit", &limit.to_string()),
+            ("show_dir", "1"),
+        ])
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", tokens.access_token))
+        .send()
+        .await
+        .map_err(|e| format!("请求文件列表失败: {e}"))?;
+
+    let body: Value = resp.json().await.map_err(|e| format!("解析文件列表失败: {e}"))?;
+    if !is_ok(&body) {
+        return Err(err_message(&body, "读取目录失败"));
+    }
+
+    let payload = body.get("data").unwrap_or(&body);
+    let total = payload.get("count").and_then(Value::as_u64).unwrap_or(0);
+    let entries = payload
+        .get("data")
+        .and_then(Value::as_array)
+        .or_else(|| payload.as_array())
+        .map(|arr| arr.iter().map(map_entry).collect())
+        .unwrap_or_default();
+
+    Ok(FilePage {
+        cid: cid.to_string(),
+        total,
+        entries,
+    })
+}
+
+async fn list_web(
+    http: &reqwest::Client,
+    cookies: &HashMap<String, String>,
+    cid: &str,
+    offset: u64,
+    limit: u64,
+) -> Result<FilePage, String> {
     let resp = http
         .get(format!("{WEBAPI}/files"))
         .query(&[
             ("aid", "1"),
-            ("cid", cid.as_str()),
+            ("cid", cid),
             ("o", "user_ptime"),
             ("asc", "0"),
             ("offset", &offset.to_string()),
@@ -391,23 +550,15 @@ pub async fn list_files(
             ("natsort", "1"),
             ("format", "json"),
         ])
-        .header(reqwest::header::COOKIE, cookie_header(&session))
+        .header(reqwest::header::COOKIE, cookie_header(cookies))
         .header(reqwest::header::REFERER, REFERER)
         .send()
         .await
         .map_err(|e| format!("请求文件列表失败: {e}"))?;
 
     let body: Value = resp.json().await.map_err(|e| format!("解析文件列表失败: {e}"))?;
-
-    if body.get("state").and_then(Value::as_bool) != Some(true) {
-        // 有些版本 state 返回 1
-        if body.get("state").and_then(Value::as_i64) != Some(1) {
-            let msg = body
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("登录状态可能已失效");
-            return Err(msg.to_string());
-        }
+    if !is_ok(&body) {
+        return Err(err_message(&body, "登录状态可能已失效"));
     }
 
     let total = body.get("count").and_then(Value::as_u64).unwrap_or(0);
@@ -418,7 +569,7 @@ pub async fn list_files(
         .unwrap_or_default();
 
     Ok(FilePage {
-        cid,
+        cid: cid.to_string(),
         total,
         entries,
     })
@@ -452,19 +603,9 @@ fn map_entry(item: &Value) -> FileEntry {
     }
 }
 
-async fn fetch_profile(http: &reqwest::Client, session: &Session) -> Result<UserProfile, String> {
-    let resp = http
-        .get(format!("{WEBAPI}/?ct=ajax&ac=nav"))
-        .header(reqwest::header::COOKIE, cookie_header(session))
-        .header(reqwest::header::REFERER, REFERER)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+// ── 用户信息 ────────────────────────────────────────────
 
-    let body: Value = resp.json().await.map_err(|e| e.to_string())?;
-    let data = body.get("data").ok_or("无用户数据")?;
-
-    let space = data.get("space_info");
+fn space_of(space: Option<&Value>) -> (Option<String>, Option<String>, Option<String>, u64, u64) {
     let pick = |key: &str| -> Option<String> {
         space
             .and_then(|s| s.get(key))
@@ -483,24 +624,88 @@ async fn fetch_profile(http: &reqwest::Client, session: &Session) -> Result<User
             .unwrap_or(0)
     };
 
+    (
+        pick("all_total"),
+        pick("all_use"),
+        pick("all_remain"),
+        pick_bytes("all_total"),
+        pick_bytes("all_use"),
+    )
+}
+
+async fn fetch_pro_profile(
+    http: &reqwest::Client,
+    tokens: &mut TokenSet,
+) -> Result<UserProfile, String> {
+    ensure_access(http, tokens).await?;
+
+    let resp = http
+        .get(format!("{PROAPI}/open/user/info"))
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", tokens.access_token))
+        .send()
+        .await
+        .map_err(|e| format!("获取用户信息失败: {e}"))?;
+
+    let body: Value = resp.json().await.map_err(|e| format!("解析用户信息失败: {e}"))?;
+    if !is_ok(&body) {
+        return Err(err_message(&body, "令牌无效或已过期"));
+    }
+
+    let data = body.get("data").unwrap_or(&body);
+    let (total, used, remain, total_bytes, used_bytes) = space_of(data.get("rt_space_info"));
+
     Ok(UserProfile {
-        user_id: data.get("user_id").and_then(Value::as_i64),
+        user_id: data
+            .get("user_id")
+            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))),
         user_name: data.get("user_name").and_then(Value::as_str).map(str::to_string),
         is_vip: data.get("is_vip").and_then(Value::as_bool).unwrap_or(false),
-        space_total: pick("all_total"),
-        space_used: pick("all_use"),
-        space_remain: pick("all_remain"),
-        space_total_bytes: pick_bytes("all_total"),
-        space_used_bytes: pick_bytes("all_use"),
+        space_total: total,
+        space_used: used,
+        space_remain: remain,
+        space_total_bytes: total_bytes,
+        space_used_bytes: used_bytes,
+        login_method: "token".into(),
+    })
+}
+
+async fn fetch_web_profile(
+    http: &reqwest::Client,
+    cookies: &HashMap<String, String>,
+) -> Result<UserProfile, String> {
+    let resp = http
+        .get(format!("{WEBAPI}/?ct=ajax&ac=nav"))
+        .header(reqwest::header::COOKIE, cookie_header(cookies))
+        .header(reqwest::header::REFERER, REFERER)
+        .send()
+        .await
+        .map_err(|e| format!("获取用户信息失败: {e}"))?;
+
+    let body: Value = resp.json().await.map_err(|e| format!("解析用户信息失败: {e}"))?;
+    let data = body.get("data").ok_or("登录状态已失效")?;
+    let (total, used, remain, total_bytes, used_bytes) = space_of(data.get("space_info"));
+
+    Ok(UserProfile {
+        user_id: data
+            .get("user_id")
+            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))),
+        user_name: data.get("user_name").and_then(Value::as_str).map(str::to_string),
+        is_vip: data.get("is_vip").and_then(Value::as_bool).unwrap_or(false),
+        space_total: total,
+        space_used: used,
+        space_remain: remain,
+        space_total_bytes: total_bytes,
+        space_used_bytes: used_bytes,
+        login_method: "cookie".into(),
     })
 }
 
 impl AppState {
     pub fn new(data_dir: PathBuf) -> Self {
-        let session = read_session(&data_dir);
+        let credential = read_credential(&data_dir);
         Self {
             data_dir,
-            session: Mutex::new(session),
+            credential: Mutex::new(credential),
             user: Mutex::new(None),
         }
     }
