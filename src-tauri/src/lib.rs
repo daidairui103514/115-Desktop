@@ -1,7 +1,11 @@
 mod api115;
 
 use std::path::PathBuf;
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    Manager, WebviewUrl, WebviewWindowBuilder,
+};
 
 /// 运行时数据统一放在可执行文件同级的 `data` 目录。
 ///
@@ -38,6 +42,8 @@ pub fn run() {
             api115::logout,
         ])
         .setup(move |app| {
+            // 无边框但**不透明**：Windows 上透明窗口会带来白屏、无阴影、
+            // 缩放闪烁等一系列问题，视觉上的圆角不值得这个代价。
             let window = WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -47,13 +53,56 @@ pub fn run() {
             .inner_size(1280.0, 840.0)
             .min_inner_size(1000.0, 620.0)
             .decorations(false)
-            .transparent(true)
+            .transparent(false)
+            .shadow(true)
             .center()
             .build()?;
 
             let _ = window.set_focus();
+
+            build_tray(app)?;
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// 系统托盘：右键（或点击）弹出菜单，可显示主窗口或退出。
+fn build_tray(app: &tauri::App) -> tauri::Result<()> {
+    let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出 115 Desktop", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+    let mut builder = TrayIconBuilder::with_id("main-tray")
+        .menu(&menu)
+        .tooltip("115 Desktop")
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => focus_main(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } = event
+            {
+                focus_main(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+
+    builder.build(app)?;
+    Ok(())
+}
+
+fn focus_main(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }

@@ -71,7 +71,6 @@ button {
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border-radius: var(--radius-win);
   overflow: hidden;
   position: relative;
   isolation: isolate;
@@ -104,15 +103,18 @@ button {
   display: flex;
   gap: 8px;
   flex: 0 0 auto;
+  align-items: center;
 }
 
 .traffic__dot {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.16);
   padding: 0;
-  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
 }
 .traffic__dot--close {
   background: var(--red);
@@ -123,17 +125,17 @@ button {
 .traffic__dot--max {
   background: var(--green);
 }
-.traffic__dot::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
+/* 符号默认隐藏，鼠标移到整组交通灯上才浮现，和 macOS 一致 */
+.traffic__dot svg {
   opacity: 0;
   transition: opacity 0.12s;
+  display: block;
 }
-.traffic:hover .traffic__dot::after {
+.traffic:hover .traffic__dot svg {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.1);
+}
+.traffic__dot:active {
+  filter: brightness(0.88);
 }
 
 .nav-arrows {
@@ -899,7 +901,6 @@ button {
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-win);
   overflow: hidden;
   background:
     radial-gradient(900px 600px at 18% -12%, rgba(74, 163, 255, 0.2), transparent 62%),
@@ -1164,4 +1165,64 @@ button {
 .login__qr-wrap .login__desc {
   margin-top: 0;
   margin-bottom: 14px;
+}
+
+/* ---------- 无边框窗口的缩放手势热区 ---------- */
+.resizer {
+  position: fixed;
+  z-index: 9000;
+  -webkit-app-region: no-drag;
+}
+.resizer--n,
+.resizer--s {
+  left: 10px;
+  right: 10px;
+  height: 5px;
+  cursor: ns-resize;
+}
+.resizer--n {
+  top: 0;
+}
+.resizer--s {
+  bottom: 0;
+}
+.resizer--e,
+.resizer--w {
+  top: 10px;
+  bottom: 10px;
+  width: 5px;
+  cursor: ew-resize;
+}
+.resizer--e {
+  right: 0;
+}
+.resizer--w {
+  left: 0;
+}
+.resizer--ne,
+.resizer--nw,
+.resizer--se,
+.resizer--sw {
+  width: 10px;
+  height: 10px;
+}
+.resizer--ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.resizer--nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.resizer--se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.resizer--sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
 }

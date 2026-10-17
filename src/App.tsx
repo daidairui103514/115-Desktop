@@ -5,6 +5,7 @@ import { Inspector } from "@/components/Inspector";
 import { TransferBar } from "@/components/TransferBar";
 import { FilesPage } from "@/pages/FilesPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { WindowResizer } from "@/components/WindowResizer";
 import { MOCK_FILES, MOCK_TRANSFERS } from "@/lib/mock";
 import { call, isTauri, toFileItem } from "@/lib/bridge";
 import type {
@@ -214,6 +215,7 @@ export default function App() {
   if (phase === "booting") {
     return (
       <div className="window">
+        <WindowResizer />
         <div className="splash">
           <div className="splash__spinner" />
           <span>正在检查登录状态…</span>
@@ -223,11 +225,17 @@ export default function App() {
   }
 
   if (phase === "guest") {
-    return <LoginPage onLoggedIn={handleLoggedIn} onPreview={handlePreview} />;
+    return (
+      <>
+        <WindowResizer />
+        <LoginPage onLoggedIn={handleLoggedIn} onPreview={handlePreview} />
+      </>
+    );
   }
 
   return (
     <div className="window">
+      <WindowResizer />
       <TitleBar
         title={NAV_TITLE[nav]}
         subtitle={stack.map((s) => s.name).join(" › ")}
