@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="115 Desktop">
+  <defs>
+    <linearGradient id="bg" x1="0.1" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#4AA3FF"/>
+      <stop offset="0.55" stop-color="#1F7BE8"/>
+      <stop offset="1" stop-color="#0E4FB8"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect width="1024" height="1024" rx="228"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <rect width="1024" height="470" fill="url(#gloss)" clip-path="url(#squircle)"/>
+
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M512 262v296" stroke-width="70"/>
+    <path d="M386 456l126 126 126-126" stroke-width="70"/>
+    <path d="M300 632v70a54 54 0 0 0 54 54h316a54 54 0 0 0 54-54v-70" stroke-width="70"/>
+  </g>
+</svg>

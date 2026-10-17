@@ -1,0 +1,89 @@
+/* ============================================================
+   115 Desktop · 设计令牌
+   浅色为默认，深色跟随系统或手动切换
+   ============================================================ */
+
+:root {
+  /* 表面 */
+  --bg: #ffffff;
+  --sidebar: rgba(240, 240, 243, 0.82);
+  --sidebar-solid: #f1f1f4;
+  --inspector: #fbfbfd;
+  --titlebar: rgba(250, 250, 252, 0.86);
+  --panel: rgba(250, 250, 252, 0.92);
+
+  /* 文字 */
+  --text: #1d1d1f;
+  --text-2: #6e6e73;
+  --text-3: #a1a1a6;
+  --text-inv: #ffffff;
+
+  /* 线条与状态 */
+  --line: rgba(0, 0, 0, 0.08);
+  --line-soft: rgba(0, 0, 0, 0.045);
+  --hover: rgba(0, 0, 0, 0.038);
+  --alt: rgba(0, 0, 0, 0.016);
+  --control: rgba(0, 0, 0, 0.045);
+  --control-hover: rgba(0, 0, 0, 0.07);
+
+  /* 强调 */
+  --accent: #007aff;
+  --accent-hover: #1487ff;
+  --accent-soft: rgba(0, 122, 255, 0.1);
+  --accent-line: rgba(0, 122, 255, 0.45);
+  --green: #28c840;
+  --amber: #febc2e;
+  --red: #ff5f57;
+  --star: #ff9f0a;
+
+  /* 尺寸 */
+  --titlebar-h: 52px;
+  --sidebar-w: 220px;
+  --inspector-w: 300px;
+  --row-h: 28px;
+  --radius-win: 10px;
+  --radius-sm: 6px;
+  --radius-md: 7px;
+
+  /* 字体 */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Display",
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* 阴影 */
+  --shadow-pop: 0 12px 36px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #1c1c1e;
+  --sidebar: rgba(38, 38, 41, 0.78);
+  --sidebar-solid: #232326;
+  --inspector: #202022;
+  --titlebar: rgba(32, 32, 35, 0.86);
+  --panel: rgba(38, 38, 41, 0.92);
+
+  --text: #f2f2f7;
+  --text-2: #98989f;
+  --text-3: #6e6e76;
+  --text-inv: #1c1c1e;
+
+  --line: rgba(255, 255, 255, 0.1);
+  --line-soft: rgba(255, 255, 255, 0.055);
+  --hover: rgba(255, 255, 255, 0.06);
+  --alt: rgba(255, 255, 255, 0.024);
+  --control: rgba(255, 255, 255, 0.07);
+  --control-hover: rgba(255, 255, 255, 0.11);
+
+  --accent: #0a84ff;
+  --accent-hover: #3d9bff;
+  --accent-soft: rgba(10, 132, 255, 0.16);
+  --accent-line: rgba(10, 132, 255, 0.55);
+
+  --shadow-pop: 0 14px 40px rgba(0, 0, 0, 0.6), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.07);
+
+  color-scheme: dark;
+}
