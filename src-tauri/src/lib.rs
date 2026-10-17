@@ -37,6 +37,7 @@ pub fn run() {
             api115::login_with_token,
             api115::auth_status,
             api115::list_files,
+            api115::offline_tasks,
             api115::logout,
         ])
         .setup(move |app| {

@@ -11,23 +11,32 @@ export function TransferBar({ tasks }: TransferBarProps) {
   return (
     <footer className="transfer">
       <div className="transfer__label">
-        <Icon name="download" size={13} style={{ color: "var(--green)" }} />
-        传输 <b>{active}</b>
+        <Icon name="download" size={13} style={{ color: "var(--text-3)" }} />
+        传输 <b>{tasks.length}</b>
       </div>
 
-      {tasks.map((task) => (
-        <div className="transfer__item" key={task.id}>
-          <span className="transfer__item-name">{task.name}</span>
-          <span className="transfer__bar">
-            <i style={{ width: `${task.progress}%` }} />
-          </span>
-          <span className="transfer__pct">{task.progress}%</span>
-        </div>
-      ))}
+      {tasks.length === 0 ? (
+        <span className="transfer__empty">暂无传输任务</span>
+      ) : (
+        tasks.map((task) => (
+          <div className="transfer__item" key={task.id}>
+            <span className="transfer__item-name">{task.name}</span>
+            <span className="transfer__bar">
+              <i style={{ width: `${task.progress}%` }} />
+            </span>
+            <span className="transfer__pct">{task.progress}%</span>
+          </div>
+        ))
+      )}
 
       <div className="transfer__spacer" />
-      <span className="transfer__speed">↓ 12.4 MB/s · ↑ 1.2 MB/s</span>
-      <button type="button" className="icon-btn" aria-label="展开传输面板">
+      {active > 0 ? <span className="transfer__speed">{active} 项进行中</span> : null}
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label="传输面板"
+        disabled={tasks.length === 0}
+      >
         <Icon name="chevron-down" size={14} />
       </button>
     </footer>

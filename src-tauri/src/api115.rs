@@ -52,17 +52,32 @@ pub struct AuthStatus {
 #[derive(Serialize)]
 pub struct FileEntry {
     pub id: String,
-    /// 文件夹的 cid；文件为空
+    /// 文件夹的 cid（开放平台里就是它的 fid）；文件为其父目录
     pub cid: String,
     pub name: String,
     pub is_dir: bool,
+    /// folder / video / image / audio / archive / subtitle / iso / document
+    pub kind: String,
     pub size: u64,
     pub size_text: String,
     pub modified: i64,
     pub pick_code: String,
     pub sha1: String,
-    /// 0 未知 / 1 文档 / 2 图片 / 3 音频 / 4 视频 / 5 压缩包
-    pub category: String,
+    pub thumb: String,
+    pub starred: bool,
+    pub duration: String,
+    pub resolution: String,
+}
+
+#[derive(Serialize)]
+pub struct OfflineTask {
+    pub info_hash: String,
+    pub name: String,
+    pub size_text: String,
+    pub percent: i64,
+    /// -1 失败 / 0 分配中 / 1 下载中 / 2 成功
+    pub status: i64,
+    pub add_time: i64,
 }
 
 #[derive(Serialize)]
@@ -314,6 +329,7 @@ pub async fn list_files(
     cid: String,
     offset: u64,
     limit: u64,
+    mode: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<FilePage, String> {
     let mut tokens = state
@@ -326,16 +342,28 @@ pub async fn list_files(
     ensure_access(&state.data_dir, &mut tokens).await?;
 
     let http = client()?;
-    let limit = limit.clamp(1, 100);
+    let limit = limit.clamp(1, 115);
+    let offset_s = offset.to_string();
+    let limit_s = limit.to_string();
+
+    let mut query: Vec<(&str, String)> = vec![
+        ("cid", cid.clone()),
+        ("offset", offset_s),
+        ("limit", limit_s),
+        ("show_dir", "1".to_string()),
+    ];
+    match mode.as_str() {
+        "starred" => query.push(("star", "1".into())),
+        "recent" => {
+            query.push(("o", "user_ptime".into()));
+            query.push(("asc", "0".into()));
+        }
+        _ => {}
+    }
 
     let resp = http
         .get(format!("{PROAPI}/open/ufile/files"))
-        .query(&[
-            ("cid", cid.as_str()),
-            ("offset", &offset.to_string()),
-            ("limit", &limit.to_string()),
-            ("show_dir", "1"),
-        ])
+        .query(&query)
         .header(
             reqwest::header::AUTHORIZATION,
             format!("Bearer {}", tokens.access_token),
@@ -360,12 +388,21 @@ pub async fn list_files(
         *guard = Some(tokens);
     }
 
-    let payload = body.get("data").unwrap_or(&body);
-    let total = payload.get("count").and_then(Value::as_u64).unwrap_or(0);
-    let entries = payload
+    // 开放平台的 GetFilesResp 把 []File 内嵌在 Resp 里，
+    // 因此 data 直接是数组，count 在顶层。
+    let total = body
+        .get("count")
+        .and_then(Value::as_u64)
+        .or_else(|| body.get("data").and_then(|d| d.get("count")).and_then(Value::as_u64))
+        .unwrap_or(0);
+
+    let entries = body
         .get("data")
-        .and_then(Value::as_array)
-        .or_else(|| payload.as_array())
+        .and_then(|d| {
+            d.as_array()
+                .cloned()
+                .or_else(|| d.get("data").and_then(Value::as_array).cloned())
+        })
         .map(|arr| arr.iter().map(map_entry).collect())
         .unwrap_or_default();
 
@@ -376,37 +413,159 @@ pub async fn list_files(
     })
 }
 
+#[tauri::command]
+pub async fn offline_tasks(
+    page: u64,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<OfflineTask>, String> {
+    let mut tokens = state
+        .tokens
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .ok_or("尚未登录")?;
+    ensure_access(&state.data_dir, &mut tokens).await?;
+
+    let http = client()?;
+    let resp = http
+        .get(format!("{PROAPI}/open/offline/get_task_list"))
+        .query(&[("page", page.to_string())])
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", tokens.access_token),
+        )
+        .send()
+        .await
+        .map_err(|e| net_err("获取离线任务失败", e))?;
+
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析离线任务失败: {e}"))?;
+
+    if !is_ok(&body) {
+        return Err(format!(
+            "获取离线任务失败：{}",
+            err_message(&body, "未知错误")
+        ));
+    }
+
+    if let Ok(mut guard) = state.tokens.lock() {
+        *guard = Some(tokens);
+    }
+
+    let tasks = body
+        .get("data")
+        .and_then(|d| d.get("tasks"))
+        .and_then(Value::as_array)
+        .or_else(|| body.get("tasks").and_then(Value::as_array))
+        .map(|arr| {
+            arr.iter()
+                .map(|t| {
+                    let s = |k: &str| t.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                    let n = |k: &str| {
+                        t.get(k)
+                            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|x| x.parse().ok())))
+                            .unwrap_or(0)
+                    };
+                    let size = n("size") as u64;
+                    OfflineTask {
+                        info_hash: s("info_hash"),
+                        name: s("name"),
+                        size_text: human_size(size),
+                        percent: n("percentDone"),
+                        status: n("status"),
+                        add_time: n("add_time"),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(tasks)
+}
+
+fn kind_of(is_dir: bool, isv: u64, ext: &str) -> String {
+    if is_dir {
+        return "folder".into();
+    }
+    match ext.to_lowercase().as_str() {
+        "mkv" | "mp4" | "avi" | "mov" | "ts" | "m2ts" | "wmv" | "flv" | "rmvb" | "rm" => "video",
+        "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "heic" => "image",
+        "mp3" | "flac" | "wav" | "m4a" | "aac" | "ape" | "ogg" => "audio",
+        "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" => "archive",
+        "ass" | "srt" | "ssa" | "vtt" | "sub" => "subtitle",
+        "iso" => "iso",
+        _ => {
+            if isv == 1 {
+                "video"
+            } else {
+                "document"
+            }
+        }
+    }
+    .into()
+}
+
+fn format_duration(seconds: u64) -> String {
+    if seconds == 0 {
+        return String::new();
+    }
+    let h = seconds / 3600;
+    let m = (seconds % 3600) / 60;
+    let s = seconds % 60;
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
+fn resolution_label(def: u64) -> String {
+    match def {
+        1 => "标清",
+        2 => "高清",
+        3 => "超清",
+        4 => "1080P",
+        5 => "4K",
+        100 => "原画",
+        _ => "",
+    }
+    .into()
+}
+
 fn map_entry(item: &Value) -> FileEntry {
-    let name = item.get("n").and_then(Value::as_str).unwrap_or("").to_string();
-    let fid = item.get("fid").and_then(Value::as_str).unwrap_or("");
-    let is_dir = fid.is_empty();
-    let size = item
-        .get("s")
-        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
-        .unwrap_or(0);
-    let cid = item.get("cid").and_then(Value::as_str).unwrap_or("").to_string();
+    let s = |k: &str| item.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let n = |k: &str| {
+        item.get(k)
+            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|x| x.parse().ok())))
+            .unwrap_or(0)
+    };
+
+    let fid = s("fid");
+    let pid = s("pid");
+    let fc = s("fc");
+    let is_dir = fc == "0";
+    let name = s("fn");
+    let size = n("fs");
+    let ext = s("ico");
+    let isv = n("isv");
 
     FileEntry {
-        id: if is_dir {
-            format!("d-{cid}")
-        } else {
-            format!("f-{fid}")
-        },
-        cid: if is_dir { cid } else { String::new() },
+        id: fid.clone(),
+        cid: if is_dir { fid } else { pid },
         name,
         is_dir,
+        kind: kind_of(is_dir, isv, &ext),
         size,
         size_text: human_size(size),
-        modified: item
-            .get("t")
-            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
-            .unwrap_or(0),
-        pick_code: item.get("pc").and_then(Value::as_str).unwrap_or("").to_string(),
-        sha1: item.get("sha").and_then(Value::as_str).unwrap_or("").to_string(),
-        category: item
-            .get("c")
-            .map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()))
-            .unwrap_or_default(),
+        modified: n("upt") as i64,
+        pick_code: s("pc"),
+        sha1: s("sha1"),
+        thumb: s("thumb"),
+        starred: s("ism") == "1",
+        duration: format_duration(n("play_long")),
+        resolution: resolution_label(n("def")),
     }
 }
 

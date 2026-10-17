@@ -41,14 +41,28 @@ export interface RemoteFile {
   cid: string;
   name: string;
   is_dir: boolean;
+  /** folder / video / image / audio / archive / subtitle / iso / document */
+  kind: string;
   size: number;
   size_text: string;
   /** Unix 秒 */
   modified: number;
   pick_code: string;
   sha1: string;
-  /** 0 未知 / 1 文档 / 2 图片 / 3 音频 / 4 视频 / 5 压缩包 */
-  category: string;
+  thumb: string;
+  starred: boolean;
+  duration: string;
+  resolution: string;
+}
+
+export interface OfflineTask {
+  info_hash: string;
+  name: string;
+  size_text: string;
+  percent: number;
+  /** -1 失败 / 0 分配中 / 1 下载中 / 2 成功 */
+  status: number;
+  add_time: number;
 }
 
 export interface FilePage {

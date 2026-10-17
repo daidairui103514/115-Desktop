@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Icon } from "./Icons";
 import { TrafficLights } from "./TrafficLights";
 import type { UserProfile, ViewMode } from "@/lib/types";
@@ -29,6 +30,8 @@ export function TitleBar({
   user,
   onLogout,
 }: TitleBarProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <header className="titlebar" data-tauri-drag-region>
       <TrafficLights />
@@ -101,14 +104,42 @@ export function TitleBar({
       </button>
 
       {user || onLogout ? (
-        <button
-          type="button"
-          className="avatar"
-          title={onLogout ? `${user?.user_name ?? "已登录"} · 点击退出登录` : user?.user_name ?? "未登录"}
-          onClick={onLogout}
-        >
-          {user?.user_name?.slice(0, 1).toUpperCase() ?? "预"}
-        </button>
+        <div className="user-wrap">
+          <button
+            type="button"
+            className="avatar"
+            title={user?.user_name ?? "账号"}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {user?.user_name?.slice(0, 1).toUpperCase() ?? "预"}
+          </button>
+
+          {menuOpen ? (
+            <>
+              <div className="user-menu__backdrop" onClick={() => setMenuOpen(false)} />
+              <div className="user-menu" role="menu">
+                <div className="user-menu__head">
+                  <div className="user-menu__name">{user?.user_name ?? "已登录"}</div>
+                  <div className="user-menu__sub">
+                    {user?.space_used ?? "—"} / {user?.space_total ?? "—"}
+                  </div>
+                </div>
+                {onLogout ? (
+                  <button
+                    type="button"
+                    className="user-menu__item user-menu__item--danger"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onLogout();
+                    }}
+                  >
+                    退出登录
+                  </button>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+        </div>
       ) : null}
     </header>
   );

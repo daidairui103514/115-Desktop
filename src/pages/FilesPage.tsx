@@ -15,6 +15,8 @@ interface FilesPageProps {
   onSort: (key: SortKey) => void;
   loading?: boolean;
   error?: string;
+  /** 该分类还没有实现时的说明，优先生效 */
+  notice?: string;
 }
 
 export function FilesPage({
@@ -30,6 +32,7 @@ export function FilesPage({
   onSort,
   loading,
   error,
+  notice,
 }: FilesPageProps) {
   return (
     <main className="content">
@@ -55,7 +58,11 @@ export function FilesPage({
         <span className="pathbar__count">{loading ? "加载中…" : `${files.length} 项`}</span>
       </div>
 
-      {error ? (
+      {notice ? (
+        <div className="empty">
+          <p className="notice-text">{notice}</p>
+        </div>
+      ) : error ? (
         <div className="empty">
           <span>加载失败：{error}</span>
         </div>

@@ -5,14 +5,16 @@ import { Inspector } from "@/components/Inspector";
 import { TransferBar } from "@/components/TransferBar";
 import { FilesPage } from "@/pages/FilesPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { OfflinePage } from "@/pages/OfflinePage";
 import { WindowResizer } from "@/components/WindowResizer";
-import { MOCK_FILES, MOCK_TRANSFERS } from "@/lib/mock";
+import { MOCK_FILES } from "@/lib/mock";
 import { call, isTauri, toFileItem } from "@/lib/bridge";
 import type {
   AuthStatus,
   FileItem,
   FilePage,
   NavKey,
+  OfflineTask,
   SortDir,
   SortKey,
   ThemeMode,
@@ -23,6 +25,7 @@ import "@/styles/tokens.css";
 import "@/styles/app.css";
 
 type Phase = "booting" | "guest" | "ready";
+type DataMode = "files" | "recent" | "starred";
 
 const NAV_TITLE: Record<NavKey, string> = {
   files: "我的文件",
@@ -36,6 +39,22 @@ const NAV_TITLE: Record<NavKey, string> = {
   toolbox: "工具箱",
 };
 
+/** 能直接落到 /open/ufile/files 的分类 */
+const NAV_MODE: Partial<Record<NavKey, DataMode>> = {
+  files: "files",
+  recent: "recent",
+  starred: "starred",
+};
+
+/** 还没有接口或还没做的分类，给出明确说明，而不是点了没反应 */
+const NAV_NOTICE: Partial<Record<NavKey, string>> = {
+  shares: "115 开放平台没有开放分享接口，这个功能暂时做不了。\n需要生成分享链接的话，目前只能在网页版或官方客户端操作。",
+  trash: "回收站接口尚未接入。",
+  downloads: "下载管理还没做。\n下一步会接 /open/ufile/downurl 拿直链，再配本地下载器。",
+  media: "海报墙媒体库还没做。\n这一块会复用文件列表里的视频条目，按 TMDb 元数据铺成网格。",
+  toolbox: "工具箱还没做。\n计划里包括 ED2K 生成、STRM 导出、文件夹排重、空目录清理。",
+};
+
 const ROOT = { cid: "0", name: "我的文件" };
 
 function compareFiles(a: FileItem, b: FileItem, key: SortKey): number {
@@ -44,7 +63,6 @@ function compareFiles(a: FileItem, b: FileItem, key: SortKey): number {
   return a.modified.localeCompare(b.modified);
 }
 
-/** 文件夹恒定排在文件前面，升降序只作用于组内 */
 function sortFiles(files: FileItem[], key: SortKey, dir: SortDir): FileItem[] {
   return [...files].sort((a, b) => {
     const aFolder = a.kind === "folder";
@@ -61,6 +79,7 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>(desktop ? "booting" : "guest");
   const [user, setUser] = useState<UserProfile | null>(null);
   const [entries, setEntries] = useState<FileItem[]>([]);
+  const [offline, setOffline] = useState<OfflineTask[]>([]);
   const [stack, setStack] = useState<{ cid: string; name: string }[]>([ROOT]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -77,30 +96,45 @@ export default function App() {
   /* ---------- 主题 ---------- */
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-
     const apply = () => {
       const next = themeMode === "system" ? (media.matches ? "dark" : "light") : themeMode;
       setResolvedTheme(next);
       document.documentElement.dataset.theme = next;
     };
-
     apply();
     if (themeMode !== "system") return;
-
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, [themeMode]);
 
-  /* ---------- 数据 ---------- */
-  const loadDir = useCallback(async (cid: string) => {
+  /* ---------- 数据加载 ---------- */
+  const loadDir = useCallback(async (cid: string, mode: DataMode = "files") => {
     setLoading(true);
     setLoadError("");
+    setEntries([]);
     try {
-      const page = await call<FilePage>("list_files", { cid, offset: 0, limit: 200 });
+      const page = await call<FilePage>("list_files", {
+        cid,
+        offset: 0,
+        limit: 115,
+        mode,
+      });
       setEntries(page.entries.map(toFileItem));
     } catch (err) {
       setLoadError(String(err));
-      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadOffline = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const tasks = await call<OfflineTask[]>("offline_tasks", { page: 1 });
+      setOffline(tasks);
+    } catch (err) {
+      setLoadError(String(err));
     } finally {
       setLoading(false);
     }
@@ -108,7 +142,6 @@ export default function App() {
 
   useEffect(() => {
     if (!desktop) return;
-
     let cancelled = false;
     void (async () => {
       try {
@@ -125,17 +158,34 @@ export default function App() {
         if (!cancelled) setPhase("guest");
       }
     })();
-
     return () => {
       cancelled = true;
     };
   }, [desktop, loadDir]);
+
+  /* 侧边栏切换时真的换数据 */
+  useEffect(() => {
+    if (phase !== "ready") return;
+    const mode = NAV_MODE[nav];
+    if (mode === "files") {
+      const current = stack[stack.length - 1];
+      void loadDir(current.cid, "files");
+    } else if (mode) {
+      void loadDir("0", mode);
+    } else if (nav === "offline") {
+      void loadOffline();
+    }
+    setSelectedId(null);
+    setQuery("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nav]);
 
   const handleLoggedIn = useCallback(
     async (profile: UserProfile | null) => {
       setUser(profile);
       setPhase("ready");
       setStack([ROOT]);
+      setNav("files");
       await loadDir(ROOT.cid);
     },
     [loadDir],
@@ -147,7 +197,6 @@ export default function App() {
   }, []);
 
   const handleLogout = useCallback(async () => {
-    if (!window.confirm("确定要退出当前账号吗？")) return;
     try {
       await call("logout");
     } catch {
@@ -155,6 +204,7 @@ export default function App() {
     }
     setUser(null);
     setEntries([]);
+    setOffline([]);
     setSelectedId(null);
     setStack([ROOT]);
     setPhase("guest");
@@ -181,7 +231,7 @@ export default function App() {
     [loadDir, stack],
   );
 
-  /* ---------- 派生数据 ---------- */
+  /* ---------- 派生 ---------- */
   const visibleFiles = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     const filtered = keyword
@@ -243,7 +293,7 @@ export default function App() {
         onViewModeChange={setViewMode}
         query={query}
         onQueryChange={setQuery}
-        onUpload={() => console.info("upload")}
+        onUpload={() => undefined}
         theme={resolvedTheme}
         onToggleTheme={toggleTheme}
         user={user}
@@ -253,25 +303,30 @@ export default function App() {
       <div className="window__body">
         <Sidebar active={nav} onChange={setNav} user={user} />
 
-        <FilesPage
-          path={stack.map((s) => s.name)}
-          files={visibleFiles}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onOpen={openFolder}
-          onCrumb={goToCrumb}
-          viewMode={viewMode}
-          sortKey={sortKey}
-          sortDir={sortDir}
-          onSort={handleSort}
-          loading={loading}
-          error={loadError}
-        />
+        {nav === "offline" ? (
+          <OfflinePage tasks={offline} loading={loading} error={loadError} />
+        ) : (
+          <FilesPage
+            path={nav === "files" ? stack.map((s) => s.name) : [NAV_TITLE[nav]]}
+            files={visibleFiles}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onOpen={openFolder}
+            onCrumb={goToCrumb}
+            viewMode={viewMode}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={handleSort}
+            loading={loading}
+            error={loadError}
+            notice={NAV_NOTICE[nav]}
+          />
+        )}
 
         <Inspector file={selectedFile} />
       </div>
 
-      <TransferBar tasks={MOCK_TRANSFERS} />
+      <TransferBar tasks={[]} />
     </div>
   );
 }
