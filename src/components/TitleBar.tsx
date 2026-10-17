@@ -1,6 +1,6 @@
 import { Icon } from "./Icons";
-import { closeWindow, minimizeWindow, toggleMaximizeWindow } from "@/lib/window";
-import type { ViewMode } from "@/lib/types";
+import { TrafficLights } from "./TrafficLights";
+import type { UserProfile, ViewMode } from "@/lib/types";
 
 interface TitleBarProps {
   title: string;
@@ -12,6 +12,8 @@ interface TitleBarProps {
   onUpload: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  user?: UserProfile | null;
+  onLogout?: () => void;
 }
 
 export function TitleBar({
@@ -24,29 +26,12 @@ export function TitleBar({
   onUpload,
   theme,
   onToggleTheme,
+  user,
+  onLogout,
 }: TitleBarProps) {
   return (
     <header className="titlebar" data-tauri-drag-region>
-      <div className="traffic">
-        <button
-          type="button"
-          className="traffic__dot traffic__dot--close"
-          aria-label="关闭窗口"
-          onClick={closeWindow}
-        />
-        <button
-          type="button"
-          className="traffic__dot traffic__dot--min"
-          aria-label="最小化窗口"
-          onClick={minimizeWindow}
-        />
-        <button
-          type="button"
-          className="traffic__dot traffic__dot--max"
-          aria-label="最大化窗口"
-          onClick={toggleMaximizeWindow}
-        />
-      </div>
+      <TrafficLights />
 
       <div className="nav-arrows">
         <button type="button" className="icon-btn" aria-label="后退">
@@ -114,6 +99,17 @@ export function TitleBar({
       <button type="button" className="icon-btn" aria-label="更多操作">
         <Icon name="more" />
       </button>
+
+      {user || onLogout ? (
+        <button
+          type="button"
+          className="avatar"
+          title={onLogout ? `${user?.user_name ?? "已登录"} · 点击退出登录` : user?.user_name ?? "未登录"}
+          onClick={onLogout}
+        >
+          {user?.user_name?.slice(0, 1).toUpperCase() ?? "预"}
+        </button>
+      ) : null}
     </header>
   );
 }

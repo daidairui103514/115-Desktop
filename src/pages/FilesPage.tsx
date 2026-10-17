@@ -7,10 +7,14 @@ interface FilesPageProps {
   files: FileItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onOpen: (item: FileItem) => void;
+  onCrumb: (index: number) => void;
   viewMode: ViewMode;
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (key: SortKey) => void;
+  loading?: boolean;
+  error?: string;
 }
 
 export function FilesPage({
@@ -18,34 +22,60 @@ export function FilesPage({
   files,
   selectedId,
   onSelect,
+  onOpen,
+  onCrumb,
   viewMode,
   sortKey,
   sortDir,
   onSort,
+  loading,
+  error,
 }: FilesPageProps) {
   return (
     <main className="content">
       <div className="pathbar">
-        {path.map((segment, index) => (
-          <Fragment key={segment}>
-            {index > 0 ? <span className="pathbar__sep">›</span> : null}
-            <span className={index === path.length - 1 ? "pathbar__current" : undefined}>
-              {segment}
-            </span>
-          </Fragment>
-        ))}
-        <span className="pathbar__count">{files.length} 项</span>
+        {path.map((segment, index) => {
+          const current = index === path.length - 1;
+          return (
+            <Fragment key={`${segment}-${index}`}>
+              {index > 0 ? <span className="pathbar__sep">›</span> : null}
+              <button
+                type="button"
+                className={`pathbar__crumb${current ? " pathbar__crumb--current" : ""}`}
+                onClick={() => {
+                  if (!current) onCrumb(index);
+                }}
+                disabled={current}
+              >
+                {segment}
+              </button>
+            </Fragment>
+          );
+        })}
+        <span className="pathbar__count">{loading ? "加载中…" : `${files.length} 项`}</span>
       </div>
 
-      <FileList
-        files={files}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        viewMode={viewMode}
-        sortKey={sortKey}
-        sortDir={sortDir}
-        onSort={onSort}
-      />
+      {error ? (
+        <div className="empty">
+          <span>加载失败：{error}</span>
+        </div>
+      ) : loading ? (
+        <div className="empty">
+          <div className="spinner" />
+          <span>正在读取目录…</span>
+        </div>
+      ) : (
+        <FileList
+          files={files}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onOpen={onOpen}
+          viewMode={viewMode}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={onSort}
+        />
+      )}
     </main>
   );
 }

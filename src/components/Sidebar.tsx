@@ -1,6 +1,6 @@
 import { Icon, type IconName } from "./Icons";
 import { NAV_GROUPS, STORAGE } from "@/lib/mock";
-import type { NavKey } from "@/lib/types";
+import type { NavKey, UserProfile } from "@/lib/types";
 
 const NAV_ICON: Record<NavKey, IconName> = {
   files: "cloud",
@@ -17,9 +17,17 @@ const NAV_ICON: Record<NavKey, IconName> = {
 interface SidebarProps {
   active: NavKey;
   onChange: (key: NavKey) => void;
+  user?: UserProfile | null;
 }
 
-export function Sidebar({ active, onChange }: SidebarProps) {
+export function Sidebar({ active, onChange, user }: SidebarProps) {
+  const hasQuota = Boolean(user?.space_total_bytes);
+  const usedText = user?.space_used ?? STORAGE.usedText;
+  const totalText = user?.space_total ?? STORAGE.totalText;
+  const usedPercent = hasQuota
+    ? Math.min(100, Math.round(((user?.space_used_bytes ?? 0) / (user?.space_total_bytes ?? 1)) * 100))
+    : 0;
+
   return (
     <aside className="sidebar">
       {NAV_GROUPS.map((group) => (
@@ -46,25 +54,36 @@ export function Sidebar({ active, onChange }: SidebarProps) {
         <div className="storage">
           <div className="storage__top">
             <span>
-              已用 <b>{STORAGE.usedText}</b>
+              已用 <b>{usedText}</b>
             </span>
-            <span style={{ opacity: 0.7 }}>/ {STORAGE.totalText}</span>
+            <span style={{ opacity: 0.7 }}>/ {totalText}</span>
           </div>
           <div className="storage__bar">
-            {STORAGE.segments.map((segment) => (
-              <i
-                key={segment.label}
-                style={{ width: `${segment.percent}%`, background: segment.color }}
-              />
-            ))}
+            {hasQuota ? (
+              <i style={{ width: `${usedPercent}%`, background: "var(--accent)" }} />
+            ) : (
+              STORAGE.segments.map((segment) => (
+                <i
+                  key={segment.label}
+                  style={{ width: `${segment.percent}%`, background: segment.color }}
+                />
+              ))
+            )}
           </div>
           <div className="storage__legend">
-            {STORAGE.segments.map((segment) => (
-              <span key={segment.label}>
-                <i style={{ background: segment.color }} />
-                {segment.label}
+            {hasQuota ? (
+              <span>
+                <i style={{ background: "var(--accent)" }} />
+                已使用 {usedPercent}%
               </span>
-            ))}
+            ) : (
+              STORAGE.segments.map((segment) => (
+                <span key={segment.label}>
+                  <i style={{ background: segment.color }} />
+                  {segment.label}
+                </span>
+              ))
+            )}
           </div>
         </div>
       </div>

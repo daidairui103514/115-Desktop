@@ -6,6 +6,7 @@ interface FileListProps {
   files: FileItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onOpen: (item: FileItem) => void;
   viewMode: ViewMode;
   sortKey: SortKey;
   sortDir: SortDir;
@@ -27,6 +28,7 @@ export function FileList({
   files,
   selectedId,
   onSelect,
+  onOpen,
   viewMode,
   sortKey,
   sortDir,
@@ -47,7 +49,7 @@ export function FileList({
             aria-selected={selectedId === file.id}
             className={`grid-card${selectedId === file.id ? " grid-card--active" : ""}`}
             onClick={() => onSelect(file.id)}
-            onDoubleClick={() => onSelect(file.id)}
+            onDoubleClick={() => onOpen(file)}
           >
             <span className="grid-card__shot">
               {file.thumb ? (
@@ -103,8 +105,12 @@ export function FileList({
             aria-selected={selectedId === file.id}
             className={`row${selectedId === file.id ? " row--active" : ""}`}
             onClick={() => onSelect(file.id)}
+            onDoubleClick={() => onOpen(file)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                onOpen(file);
+              } else if (event.key === " ") {
                 event.preventDefault();
                 onSelect(file.id);
               }

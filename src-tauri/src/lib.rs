@@ -1,3 +1,5 @@
+mod api115;
+
 use std::path::PathBuf;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
@@ -26,6 +28,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(api115::AppState::new(data_dir.clone()))
+        .invoke_handler(tauri::generate_handler![
+            api115::qr_start,
+            api115::qr_poll,
+            api115::auth_status,
+            api115::list_files,
+            api115::logout,
+        ])
         .setup(move |app| {
             let window = WebviewWindowBuilder::new(
                 app,
