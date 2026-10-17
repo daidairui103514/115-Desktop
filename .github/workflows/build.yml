@@ -46,8 +46,8 @@ jobs:
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('115 Desktop {0}', github.ref_name) || '' }}
-          releaseBody: "下载下方 setup.exe 安装即可。"
-          releaseDraft: true
+          releaseBody: "下载下方 setup.exe 安装即可；也可下载 desktop115.exe 免安装直接运行。"
+          releaseDraft: false
           prerelease: false
 
       - name: upload artifacts
