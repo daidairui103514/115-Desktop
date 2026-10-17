@@ -36,9 +36,23 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             api115::login_with_token,
             api115::auth_status,
-            api115::list_files,
-            api115::offline_tasks,
             api115::logout,
+            api115::list_files,
+            api115::search_files,
+            api115::rename_file,
+            api115::delete_files,
+            api115::move_files,
+            api115::copy_files,
+            api115::create_folder,
+            api115::download_url,
+            api115::video_play_url,
+            api115::offline_tasks,
+            api115::offline_add,
+            api115::offline_delete,
+            api115::offline_clear,
+            api115::recycle_list,
+            api115::recycle_revert,
+            api115::recycle_clear,
         ])
         .setup(move |app| {
             // 无边框但**不透明**：Windows 上透明窗口会带来白屏、无阴影、

@@ -65,6 +65,12 @@ export interface OfflineTask {
   add_time: number;
 }
 
+export interface OpResult {
+  ok: number;
+  fail: number;
+  message: string;
+}
+
 export interface FilePage {
   cid: string;
   total: number;

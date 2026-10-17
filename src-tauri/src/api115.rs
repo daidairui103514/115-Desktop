@@ -87,6 +87,13 @@ pub struct FilePage {
     pub entries: Vec<FileEntry>,
 }
 
+#[derive(Serialize)]
+pub struct OpResult {
+    pub ok: u64,
+    pub fail: u64,
+    pub message: String,
+}
+
 // ── 工具 ────────────────────────────────────────────────
 
 fn now_ms() -> i64 {
@@ -233,6 +240,107 @@ async fn ensure_access(data_dir: &Path, tokens: &mut TokenSet) -> Result<(), Str
     // 轮换后的新 refresh_token 必须马上写回
     persist(data_dir, tokens);
     Ok(())
+}
+
+// ── 限流与通用调用 ──────────────────────────────────────
+
+/// 115 有账号级频率限制，超了返回 770004。全局串行，间隔 1.1 秒。
+async fn throttle() {
+    use std::sync::Mutex as StdMutex;
+    use std::time::{Duration, Instant};
+
+    static LAST: StdMutex<Option<Instant>> = StdMutex::new(None);
+    const GAP: Duration = Duration::from_millis(1100);
+
+    let wait = {
+        let mut guard = match LAST.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let now = Instant::now();
+        let wait = match *guard {
+            Some(last) if now.duration_since(last) < GAP => GAP - now.duration_since(last),
+            _ => Duration::ZERO,
+        };
+        *guard = Some(now + wait);
+        wait
+    };
+
+    if !wait.is_zero() {
+        tokio::time::sleep(wait).await;
+    }
+}
+
+async fn api_get(
+    state: &tauri::State<'_, AppState>,
+    path: &str,
+    query: Vec<(&str, String)>,
+) -> Result<Value, String> {
+    let mut tokens = state
+        .tokens
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .ok_or("尚未登录")?;
+    ensure_access(&state.data_dir, &mut tokens).await?;
+
+    throttle().await;
+    let http = client()?;
+    let resp = http
+        .get(format!("{PROAPI}{path}"))
+        .query(&query)
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", tokens.access_token),
+        )
+        .send()
+        .await
+        .map_err(|e| net_err("请求失败", e))?;
+
+    let body: Value = resp.json().await.map_err(|e| format!("解析响应失败: {e}"))?;
+    if let Ok(mut guard) = state.tokens.lock() {
+        *guard = Some(tokens);
+    }
+    if !is_ok(&body) {
+        return Err(err_message(&body, "请求失败"));
+    }
+    Ok(body.get("data").cloned().unwrap_or(Value::Null))
+}
+
+async fn api_post(
+    state: &tauri::State<'_, AppState>,
+    path: &str,
+    form: Vec<(&str, String)>,
+) -> Result<Value, String> {
+    let mut tokens = state
+        .tokens
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .ok_or("尚未登录")?;
+    ensure_access(&state.data_dir, &mut tokens).await?;
+
+    throttle().await;
+    let http = client()?;
+    let resp = http
+        .post(format!("{PROAPI}{path}"))
+        .form(&form)
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", tokens.access_token),
+        )
+        .send()
+        .await
+        .map_err(|e| net_err("请求失败", e))?;
+
+    let body: Value = resp.json().await.map_err(|e| format!("解析响应失败: {e}"))?;
+    if let Ok(mut guard) = state.tokens.lock() {
+        *guard = Some(tokens);
+    }
+    if !is_ok(&body) {
+        return Err(err_message(&body, "请求失败"));
+    }
+    Ok(body.get("data").cloned().unwrap_or(Value::Null))
 }
 
 // ── 命令 ────────────────────────────────────────────────
@@ -648,4 +756,279 @@ impl AppState {
             user: Mutex::new(None),
         }
     }
+}
+
+// ── 命令：文件操作 ──────────────────────────────────────
+
+#[tauri::command]
+pub async fn rename_file(
+    fid: String,
+    name: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    api_post(
+        &state,
+        "/open/ufile/update",
+        vec![("file_id", fid), ("file_name", name)],
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn delete_files(
+    fids: Vec<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<OpResult, String> {
+    let mut ok = 0u64;
+    let mut fail = 0u64;
+    let mut first_err = String::new();
+
+    for fid in &fids {
+        match api_post(&state, "/open/ufile/delete", vec![("file_ids", fid.clone())]).await {
+            Ok(_) => ok += 1,
+            Err(e) => {
+                fail += 1;
+                if first_err.is_empty() {
+                    first_err = e;
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+
+    Ok(OpResult {
+        ok,
+        fail,
+        message: first_err,
+    })
+}
+
+#[tauri::command]
+pub async fn move_files(
+    fids: Vec<String>,
+    to_cid: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<OpResult, String> {
+    let mut ok = 0u64;
+    let mut fail = 0u64;
+    let mut first_err = String::new();
+
+    for fid in &fids {
+        match api_post(
+            &state,
+            "/open/ufile/move",
+            vec![("file_ids", fid.clone()), ("to_cid", to_cid.clone())],
+        )
+        .await
+        {
+            Ok(_) => ok += 1,
+            Err(e) => {
+                fail += 1;
+                if first_err.is_empty() {
+                    first_err = e;
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+
+    Ok(OpResult {
+        ok,
+        fail,
+        message: first_err,
+    })
+}
+
+#[tauri::command]
+pub async fn copy_files(
+    fids: Vec<String>,
+    to_cid: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<OpResult, String> {
+    let mut ok = 0u64;
+    let mut fail = 0u64;
+    let mut first_err = String::new();
+
+    for fid in &fids {
+        match api_post(
+            &state,
+            "/open/ufile/copy",
+            vec![("pid", to_cid.clone()), ("file_id", fid.clone())],
+        )
+        .await
+        {
+            Ok(_) => ok += 1,
+            Err(e) => {
+                fail += 1;
+                if first_err.is_empty() {
+                    first_err = e;
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+
+    Ok(OpResult {
+        ok,
+        fail,
+        message: first_err,
+    })
+}
+
+#[tauri::command]
+pub async fn create_folder(
+    pid: String,
+    name: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    api_post(
+        &state,
+        "/open/folder/add",
+        vec![("pid", pid), ("file_name", name)],
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn search_files(
+    keyword: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<FileEntry>, String> {
+    let data = api_get(
+        &state,
+        "/open/ufile/search",
+        vec![
+            ("search_value", keyword),
+            ("limit", "100".into()),
+            ("offset", "0".into()),
+        ],
+    )
+    .await?;
+
+    let arr = data
+        .as_array()
+        .cloned()
+        .or_else(|| data.get("data").and_then(Value::as_array).cloned())
+        .unwrap_or_default();
+
+    Ok(arr.iter().map(map_entry).collect())
+}
+
+/// 取下载直链。注意：115 的直链与申请时的 User-Agent 绑定。
+#[tauri::command]
+pub async fn download_url(
+    pc: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let data = api_post(&state, "/open/ufile/downurl", vec![("pick_code", pc)]).await?;
+
+    let url = data
+        .as_object()
+        .and_then(|m| m.values().next())
+        .and_then(|v| v.get("url"))
+        .and_then(|u| {
+            u.get("url")
+                .and_then(Value::as_str)
+                .or_else(|| u.as_str())
+        })
+        .unwrap_or("")
+        .to_string();
+
+    if url.is_empty() {
+        return Err("没有拿到下载地址".into());
+    }
+    Ok(url)
+}
+
+/// 取 115 官方播放流（m3u8，按画质从高到低）
+#[tauri::command]
+pub async fn video_play_url(
+    pc: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let data = api_get(&state, "/open/video/play", vec![("pick_code", pc)]).await?;
+
+    let url = data
+        .get("video_url")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("url"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    if url.is_empty() {
+        return Err("该文件需要先在 115 云端转码，或暂不支持在线播放".into());
+    }
+    Ok(url)
+}
+
+// ── 命令：回收站 ────────────────────────────────────────
+
+#[tauri::command]
+pub async fn recycle_list(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<Value>, String> {
+    let data = api_get(
+        &state,
+        "/open/rb/list",
+        vec![("limit", "100".into()), ("offset", "0".into())],
+    )
+    .await?;
+
+    Ok(data
+        .as_array()
+        .cloned()
+        .or_else(|| data.get("data").and_then(Value::as_array).cloned())
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn recycle_revert(
+    tid: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    api_post(&state, "/open/rb/revert", vec![("tid", tid)])
+        .await
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn recycle_clear(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    api_post(&state, "/open/rb/del", vec![]).await.map(|_| ())
+}
+
+// ── 命令：离线下载 ──────────────────────────────────────
+
+#[tauri::command]
+pub async fn offline_add(
+    urls: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    api_post(&state, "/open/offline/add_task_urls", vec![("urls", urls)])
+        .await
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn offline_delete(
+    hash: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    api_post(
+        &state,
+        "/open/offline/del_task",
+        vec![("info_hash", hash), ("del_source_file", "0".into())],
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn offline_clear(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    api_post(&state, "/open/offline/clear_task", vec![("flag", "1".into())])
+        .await
+        .map(|_| ())
 }

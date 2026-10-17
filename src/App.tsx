@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TitleBar } from "@/components/TitleBar";
 import { Sidebar } from "@/components/Sidebar";
 import { Inspector } from "@/components/Inspector";
 import { TransferBar } from "@/components/TransferBar";
+import { ContextMenu, type MenuAction } from "@/components/ContextMenu";
+import { ConfirmDialog, PromptDialog } from "@/components/Dialogs";
 import { FilesPage } from "@/pages/FilesPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { OfflinePage } from "@/pages/OfflinePage";
@@ -15,6 +17,7 @@ import type {
   FilePage,
   NavKey,
   OfflineTask,
+  OpResult,
   SortDir,
   SortKey,
   ThemeMode,
@@ -39,23 +42,27 @@ const NAV_TITLE: Record<NavKey, string> = {
   toolbox: "工具箱",
 };
 
-/** 能直接落到 /open/ufile/files 的分类 */
 const NAV_MODE: Partial<Record<NavKey, DataMode>> = {
   files: "files",
   recent: "recent",
   starred: "starred",
 };
 
-/** 还没有接口或还没做的分类，给出明确说明，而不是点了没反应 */
 const NAV_NOTICE: Partial<Record<NavKey, string>> = {
-  shares: "115 开放平台没有开放分享接口，这个功能暂时做不了。\n需要生成分享链接的话，目前只能在网页版或官方客户端操作。",
-  trash: "回收站接口尚未接入。",
-  downloads: "下载管理还没做。\n下一步会接 /open/ufile/downurl 拿直链，再配本地下载器。",
-  media: "海报墙媒体库还没做。\n这一块会复用文件列表里的视频条目，按 TMDb 元数据铺成网格。",
-  toolbox: "工具箱还没做。\n计划里包括 ED2K 生成、STRM 导出、文件夹排重、空目录清理。",
+  shares: "115 开放平台没有开放分享接口，这个功能暂时做不了。\n需要生成分享链接只能在网页版或官方客户端操作。",
+  trash: "回收站接口尚未接入界面。",
+  downloads: "下载管理还没做。",
+  media: "海报墙媒体库还没做。",
+  toolbox: "工具箱还没做（ED2K 生成、STRM 导出、排重、空目录清理）。",
 };
 
 const ROOT = { cid: "0", name: "我的文件" };
+
+type DialogState =
+  | { type: "rename"; item: FileItem }
+  | { type: "mkdir" }
+  | { type: "delete"; items: FileItem[] }
+  | null;
 
 function compareFiles(a: FileItem, b: FileItem, key: SortKey): number {
   if (key === "name") return a.name.localeCompare(b.name, "zh-CN");
@@ -85,13 +92,27 @@ export default function App() {
   const [loadError, setLoadError] = useState("");
 
   const [nav, setNav] = useState<NavKey>("files");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [themeMode, setThemeMode] = useState<ThemeMode>("system");
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+
+  const [menu, setMenu] = useState<{ x: number; y: number; item: FileItem } | null>(null);
+  const [dialog, setDialog] = useState<DialogState>(null);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef(0);
+
+  const currentCid = stack[stack.length - 1]?.cid ?? "0";
+
+  const notify = useCallback((message: string) => {
+    setToast(message);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 2600);
+  }, []);
 
   /* ---------- 主题 ---------- */
   useEffect(() => {
@@ -107,18 +128,13 @@ export default function App() {
     return () => media.removeEventListener("change", apply);
   }, [themeMode]);
 
-  /* ---------- 数据加载 ---------- */
+  /* ---------- 数据 ---------- */
   const loadDir = useCallback(async (cid: string, mode: DataMode = "files") => {
     setLoading(true);
     setLoadError("");
     setEntries([]);
     try {
-      const page = await call<FilePage>("list_files", {
-        cid,
-        offset: 0,
-        limit: 115,
-        mode,
-      });
+      const page = await call<FilePage>("list_files", { cid, offset: 0, limit: 115, mode });
       setEntries(page.entries.map(toFileItem));
     } catch (err) {
       setLoadError(String(err));
@@ -131,8 +147,7 @@ export default function App() {
     setLoading(true);
     setLoadError("");
     try {
-      const tasks = await call<OfflineTask[]>("offline_tasks", { page: 1 });
-      setOffline(tasks);
+      setOffline(await call<OfflineTask[]>("offline_tasks", { page: 1 }));
     } catch (err) {
       setLoadError(String(err));
     } finally {
@@ -163,19 +178,17 @@ export default function App() {
     };
   }, [desktop, loadDir]);
 
-  /* 侧边栏切换时真的换数据 */
   useEffect(() => {
     if (phase !== "ready") return;
     const mode = NAV_MODE[nav];
     if (mode === "files") {
-      const current = stack[stack.length - 1];
-      void loadDir(current.cid, "files");
+      void loadDir(currentCid, "files");
     } else if (mode) {
       void loadDir("0", mode);
     } else if (nav === "offline") {
       void loadOffline();
     }
-    setSelectedId(null);
+    setSelectedIds([]);
     setQuery("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nav]);
@@ -205,9 +218,19 @@ export default function App() {
     setUser(null);
     setEntries([]);
     setOffline([]);
-    setSelectedId(null);
+    setSelectedIds([]);
     setStack([ROOT]);
     setPhase("guest");
+  }, []);
+
+  const refresh = useCallback(() => loadDir(currentCid), [loadDir, currentCid]);
+
+  /* ---------- 选择 ---------- */
+  const handleSelect = useCallback((id: string, additive: boolean) => {
+    setSelectedIds((prev) => {
+      if (!additive) return [id];
+      return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+    });
   }, []);
 
   const openFolder = useCallback(
@@ -215,7 +238,7 @@ export default function App() {
       if (item.kind !== "folder" || !item.cid) return;
       const cid = item.cid;
       setStack((prev) => [...prev, { cid, name: item.name }]);
-      setSelectedId(null);
+      setSelectedIds([]);
       void loadDir(cid);
     },
     [loadDir],
@@ -231,19 +254,127 @@ export default function App() {
     [loadDir, stack],
   );
 
-  /* ---------- 派生 ---------- */
-  const visibleFiles = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    const filtered = keyword
-      ? entries.filter((file) => file.name.toLowerCase().includes(keyword))
-      : entries;
-    return sortFiles(filtered, sortKey, sortDir);
-  }, [entries, query, sortKey, sortDir]);
-
-  const selectedFile = useMemo(
-    () => visibleFiles.find((file) => file.id === selectedId) ?? null,
-    [visibleFiles, selectedId],
+  /* ---------- 操作 ---------- */
+  const selectedItems = useMemo(
+    () => entries.filter((entry) => selectedIds.includes(entry.id)),
+    [entries, selectedIds],
   );
+
+  const copyDownloadUrl = useCallback(
+    async (item: FileItem) => {
+      if (!item.pickCode) {
+        notify("这个条目没有 pick_code");
+        return;
+      }
+      try {
+        const url = await call<string>("download_url", { pc: item.pickCode });
+        await navigator.clipboard.writeText(url);
+        notify("下载直链已复制到剪贴板");
+      } catch (err) {
+        notify(String(err));
+      }
+    },
+    [notify],
+  );
+
+  const playItem = useCallback(
+    async (item: FileItem) => {
+      if (!item.pickCode) {
+        notify("这个条目没有 pick_code");
+        return;
+      }
+      try {
+        const url = await call<string>("video_play_url", { pc: item.pickCode });
+        const { openUrl } = await import("@tauri-apps/plugin-opener");
+        await openUrl(url);
+        notify("已用默认播放器打开");
+      } catch (err) {
+        notify(String(err));
+      }
+    },
+    [notify],
+  );
+
+  const submitRename = useCallback(
+    async (name: string) => {
+      if (dialog?.type !== "rename") return;
+      setBusy(true);
+      try {
+        await call("rename_file", { fid: dialog.item.id, name });
+        setDialog(null);
+        await refresh();
+        notify("已重命名");
+      } catch (err) {
+        notify(String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [dialog, notify, refresh],
+  );
+
+  const submitMkdir = useCallback(
+    async (name: string) => {
+      setBusy(true);
+      try {
+        await call("create_folder", { pid: currentCid, name });
+        setDialog(null);
+        await refresh();
+        notify("文件夹已创建");
+      } catch (err) {
+        notify(String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [currentCid, notify, refresh],
+  );
+
+  const submitDelete = useCallback(async () => {
+    if (dialog?.type !== "delete") return;
+    setBusy(true);
+    try {
+      const result = await call<OpResult>("delete_files", {
+        fids: dialog.items.map((item) => item.id),
+      });
+      setDialog(null);
+      setSelectedIds([]);
+      await refresh();
+      notify(result.fail > 0 ? `成功 ${result.ok} 项，失败 ${result.fail} 项：${result.message}` : `已删除 ${result.ok} 项`);
+    } catch (err) {
+      notify(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [dialog, notify, refresh]);
+
+  const menuItems = useMemo<MenuAction[]>(() => {
+    if (!menu) return [];
+    const item = menu.item;
+    const actions: MenuAction[] = [];
+
+    if (item.kind === "folder") {
+      actions.push({ label: "打开", onClick: () => openFolder(item) });
+    }
+    if (item.kind === "video" || item.kind === "iso") {
+      actions.push({ label: "在线播放", onClick: () => void playItem(item) });
+    }
+    if (item.pickCode) {
+      actions.push({ label: "复制下载直链", onClick: () => void copyDownloadUrl(item) });
+    }
+    actions.push({
+      label: "重命名",
+      onClick: () => setDialog({ type: "rename", item }),
+    });
+    actions.push({
+      label: "删除",
+      danger: true,
+      onClick: () => setDialog({ type: "delete", items: [item] }),
+    });
+    return actions;
+  }, [menu, openFolder, playItem, copyDownloadUrl]);
+
+  const selectedFile = selectedItems.length === 1 ? selectedItems[0] : null;
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -253,6 +384,14 @@ export default function App() {
     setSortKey(key);
     setSortDir("asc");
   };
+
+  const visibleFiles = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    const filtered = keyword
+      ? entries.filter((file) => file.name.toLowerCase().includes(keyword))
+      : entries;
+    return sortFiles(filtered, sortKey, sortDir);
+  }, [entries, query, sortKey, sortDir]);
 
   const toggleTheme = () => {
     setThemeMode((mode) => {
@@ -293,7 +432,7 @@ export default function App() {
         onViewModeChange={setViewMode}
         query={query}
         onQueryChange={setQuery}
-        onUpload={() => undefined}
+        onNewFolder={() => setDialog({ type: "mkdir" })}
         theme={resolvedTheme}
         onToggleTheme={toggleTheme}
         user={user}
@@ -309,9 +448,10 @@ export default function App() {
           <FilesPage
             path={nav === "files" ? stack.map((s) => s.name) : [NAV_TITLE[nav]]}
             files={visibleFiles}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
+            selectedIds={selectedIds}
+            onSelect={handleSelect}
             onOpen={openFolder}
+            onContextMenu={(x, y, item) => setMenu({ x, y, item })}
             onCrumb={goToCrumb}
             viewMode={viewMode}
             sortKey={sortKey}
@@ -327,6 +467,48 @@ export default function App() {
       </div>
 
       <TransferBar tasks={[]} />
+
+      {menu ? (
+        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
+      ) : null}
+
+      {dialog?.type === "rename" ? (
+        <PromptDialog
+          title="重命名"
+          label="文件名（可以直接改后缀）"
+          initialValue={dialog.item.name}
+          confirmText="重命名"
+          busy={busy}
+          onConfirm={(value) => void submitRename(value)}
+          onCancel={() => setDialog(null)}
+        />
+      ) : null}
+
+      {dialog?.type === "mkdir" ? (
+        <PromptDialog
+          title="新建文件夹"
+          label="文件夹名称"
+          initialValue="新建文件夹"
+          confirmText="创建"
+          busy={busy}
+          onConfirm={(value) => void submitMkdir(value)}
+          onCancel={() => setDialog(null)}
+        />
+      ) : null}
+
+      {dialog?.type === "delete" ? (
+        <ConfirmDialog
+          title="删除文件"
+          message={`确定删除 ${dialog.items.length} 项吗？删除后可在网页版回收站找回。`}
+          confirmText="删除"
+          danger
+          busy={busy}
+          onConfirm={() => void submitDelete()}
+          onCancel={() => setDialog(null)}
+        />
+      ) : null}
+
+      {toast ? <div className="toast">{toast}</div> : null}
     </div>
   );
 }

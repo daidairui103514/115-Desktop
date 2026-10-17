@@ -4,9 +4,10 @@ import { KIND_LABEL, type FileItem, type SortDir, type SortKey, type ViewMode } 
 
 interface FileListProps {
   files: FileItem[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  selectedIds: string[];
+  onSelect: (id: string, additive: boolean) => void;
   onOpen: (item: FileItem) => void;
+  onContextMenu: (x: number, y: number, item: FileItem) => void;
   viewMode: ViewMode;
   sortKey: SortKey;
   sortDir: SortDir;
@@ -26,45 +27,51 @@ function SortArrow({ active, dir }: { active: boolean; dir: SortDir }) {
 
 export function FileList({
   files,
-  selectedId,
+  selectedIds,
   onSelect,
   onOpen,
+  onContextMenu,
   viewMode,
   sortKey,
   sortDir,
   onSort,
 }: FileListProps) {
   if (files.length === 0) {
-    return <div className="empty">这个目录里没有匹配的文件</div>;
+    return <div className="empty">这个目录是空的</div>;
   }
 
   if (viewMode === "grid") {
     return (
-      <div className="grid" role="listbox" aria-label="文件网格">
-        {files.map((file) => (
-          <button
-            key={file.id}
-            type="button"
-            role="option"
-            aria-selected={selectedId === file.id}
-            className={`grid-card${selectedId === file.id ? " grid-card--active" : ""}`}
-            onClick={() => onSelect(file.id)}
-            onDoubleClick={() => onOpen(file)}
-          >
-            <span className="grid-card__shot">
-              {file.thumb ? (
-                <img src={file.thumb} alt="" loading="lazy" />
-              ) : (
-                <Icon name={iconForKind(file.kind)} size={34} />
-              )}
-            </span>
-            <span className="grid-card__name">{file.name}</span>
-            <span className="grid-card__meta">
-              {file.sizeText}
-              {file.itemCount ? ` · ${file.itemCount} 项` : ""}
-            </span>
-          </button>
-        ))}
+      <div className="grid" role="listbox" aria-label="文件网格" aria-multiselectable="true">
+        {files.map((file) => {
+          const active = selectedIds.includes(file.id);
+          return (
+            <button
+              key={file.id}
+              type="button"
+              role="option"
+              aria-selected={active}
+              className={`grid-card${active ? " grid-card--active" : ""}`}
+              onClick={(event) => onSelect(file.id, event.ctrlKey || event.metaKey)}
+              onDoubleClick={() => onOpen(file)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                onSelect(file.id, false);
+                onContextMenu(event.clientX, event.clientY, file);
+              }}
+            >
+              <span className="grid-card__shot">
+                {file.thumb ? (
+                  <img src={file.thumb} alt="" loading="lazy" />
+                ) : (
+                  <Icon name={iconForKind(file.kind)} size={34} />
+                )}
+              </span>
+              <span className="grid-card__name">{file.name}</span>
+              <span className="grid-card__meta">{file.sizeText}</span>
+            </button>
+          );
+        })}
       </div>
     );
   }
@@ -96,49 +103,54 @@ export function FileList({
         </button>
       </div>
 
-      <div className="filelist" role="listbox" aria-label="文件列表">
-        {files.map((file) => (
-          <div
-            key={file.id}
-            role="option"
-            tabIndex={0}
-            aria-selected={selectedId === file.id}
-            className={`row${selectedId === file.id ? " row--active" : ""}`}
-            onClick={() => onSelect(file.id)}
-            onDoubleClick={() => onOpen(file)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
+      <div className="filelist" role="listbox" aria-label="文件列表" aria-multiselectable="true">
+        {files.map((file) => {
+          const active = selectedIds.includes(file.id);
+          return (
+            <div
+              key={file.id}
+              role="option"
+              tabIndex={0}
+              aria-selected={active}
+              className={`row${active ? " row--active" : ""}`}
+              onClick={(event) => onSelect(file.id, event.ctrlKey || event.metaKey)}
+              onDoubleClick={() => onOpen(file)}
+              onContextMenu={(event) => {
                 event.preventDefault();
-                onOpen(file);
-              } else if (event.key === " ") {
-                event.preventDefault();
-                onSelect(file.id);
-              }
-            }}
-          >
-            <div className="row__name">
-              {file.thumb ? (
-                <img className="row__thumb" src={file.thumb} alt="" loading="lazy" />
-              ) : (
-                <span
-                  className="row__icon"
-                  style={{ color: file.kind === "folder" ? "var(--accent)" : undefined }}
-                >
-                  <Icon name={iconForKind(file.kind)} />
-                </span>
-              )}
-              <span className="row__text">{file.name}</span>
-              {file.starred ? (
-                <span className="row__star">
-                  <Icon name="star" size={11} />
-                </span>
-              ) : null}
+                onSelect(file.id, false);
+                onContextMenu(event.clientX, event.clientY, file);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onOpen(file);
+                }
+              }}
+            >
+              <div className="row__name">
+                {file.thumb ? (
+                  <img className="row__thumb" src={file.thumb} alt="" loading="lazy" />
+                ) : (
+                  <span
+                    className="row__icon"
+                    style={{ color: file.kind === "folder" ? "var(--accent)" : undefined }}
+                  >
+                    <Icon name={iconForKind(file.kind)} />
+                  </span>
+                )}
+                <span className="row__text">{file.name}</span>
+                {file.starred ? (
+                  <span className="row__star">
+                    <Icon name="star" size={11} />
+                  </span>
+                ) : null}
+              </div>
+              <div className="row__size">{file.sizeText}</div>
+              <div className="row__kind">{KIND_LABEL[file.kind]}</div>
+              <div className="row__date">{file.modifiedText}</div>
             </div>
-            <div className="row__size">{file.sizeText}</div>
-            <div className="row__kind">{KIND_LABEL[file.kind]}</div>
-            <div className="row__date">{file.modifiedText}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

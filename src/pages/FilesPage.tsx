@@ -5,9 +5,10 @@ import type { FileItem, SortDir, SortKey, ViewMode } from "@/lib/types";
 interface FilesPageProps {
   path: string[];
   files: FileItem[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  selectedIds: string[];
+  onSelect: (id: string, additive: boolean) => void;
   onOpen: (item: FileItem) => void;
+  onContextMenu: (x: number, y: number, item: FileItem) => void;
   onCrumb: (index: number) => void;
   viewMode: ViewMode;
   sortKey: SortKey;
@@ -22,9 +23,10 @@ interface FilesPageProps {
 export function FilesPage({
   path,
   files,
-  selectedId,
+  selectedIds,
   onSelect,
   onOpen,
+  onContextMenu,
   onCrumb,
   viewMode,
   sortKey,
@@ -74,9 +76,10 @@ export function FilesPage({
       ) : (
         <FileList
           files={files}
-          selectedId={selectedId}
+          selectedIds={selectedIds}
           onSelect={onSelect}
           onOpen={onOpen}
+          onContextMenu={onContextMenu}
           viewMode={viewMode}
           sortKey={sortKey}
           sortDir={sortDir}
