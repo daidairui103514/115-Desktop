@@ -10,6 +10,7 @@ import { FilesPage } from "@/pages/FilesPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { OfflinePage } from "@/pages/OfflinePage";
 import { RecyclePage } from "@/pages/RecyclePage";
+import { ToolboxPage } from "@/pages/ToolboxPage";
 import { WindowResizer } from "@/components/WindowResizer";
 import { MOCK_FILES } from "@/lib/mock";
 import { call, isTauri, toFileItem } from "@/lib/bridge";
@@ -55,7 +56,6 @@ const NAV_NOTICE: Partial<Record<NavKey, string>> = {
   shares: "115 开放平台没有开放分享接口，这个功能暂时做不了。\n需要生成分享链接只能在网页版或官方客户端操作。",
   downloads: "下载管理还没做。",
   media: "海报墙媒体库还没做。",
-  toolbox: "工具箱还没做（ED2K 生成、STRM 导出、排重、空目录清理）。",
 };
 
 const ROOT = { cid: "0", name: "我的文件" };
@@ -528,6 +528,8 @@ export default function App() {
 
         {nav === "offline" ? (
           <OfflinePage tasks={offline} loading={loading} error={loadError} />
+        ) : nav === "toolbox" ? (
+          <ToolboxPage rootCid={currentCid} onNotify={notify} />
         ) : nav === "trash" ? (
           <RecyclePage
             items={recycle}
