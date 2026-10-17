@@ -1,6 +1,6 @@
 # 115 Desktop
 
-轻量的第三方 115 网盘桌面客户端。基于 **Tauri 2 + React + TypeScript**，Windows 与 macOS 双端。
+轻量的第三方 115 网盘桌面客户端。基于 **Tauri 2 + React + TypeScript**，当前构建目标为 Windows。
 
 > 当前处于 **UI 骨架阶段**：文件浏览、排序、搜索、详情、传输状态已可交互，数据为本地示例。115 API 通道与本地服务能力在路线图中。
 
@@ -15,7 +15,7 @@
 | 冷启动 | 快 | 慢 |
 | 系统集成 | 原生窗口 / 托盘 | 需额外适配 |
 
-桌面端用系统 WebView2（Windows）与 WKWebView（macOS），不打包浏览器内核。
+Windows 端复用系统自带的 WebView2，不打包浏览器内核。
 
 ## 功能
 
@@ -42,7 +42,7 @@
 - **壳**：Tauri 2（Rust）
 - **前端**：React 18 + TypeScript + Vite
 - **样式**：原生 CSS 变量 + 设计令牌，无 UI 框架依赖
-- **构建**：GitHub Actions，产物为 NSIS 安装包 / DMG
+- **构建**：GitHub Actions，产物为 NSIS 安装包
 
 ## 构建
 
@@ -52,9 +52,7 @@
 
 | Job | 产物 |
 |---|---|
-| `windows-x64` | `115 Desktop_0.1.0_x64-setup.exe` |
-| `macos-arm64` | `115 Desktop_0.1.0_aarch64.dmg` |
-| `macos-x64` | `115 Desktop_0.1.0_x64.dmg` |
+| `windows-x64` | `115 Desktop_0.1.0_x64-setup.exe`（NSIS 安装包） |
 
 产物在对应 Actions 运行的 **Artifacts** 中下载。打 `v*` 标签时自动创建草稿 Release。
 
