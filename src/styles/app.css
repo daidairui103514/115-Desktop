@@ -1226,3 +1226,26 @@ button {
   left: 0;
   cursor: nesw-resize;
 }
+
+/* ---------- 登录错误信息（多行、可滚动） ---------- */
+.login__error {
+  margin-top: 14px;
+  width: 100%;
+  max-height: 148px;
+  overflow-y: auto;
+  text-align: left;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #c40014;
+  background: rgba(215, 0, 21, 0.07);
+  border: 1px solid rgba(215, 0, 21, 0.18);
+  border-radius: 7px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+[data-theme="dark"] .login__error {
+  color: #ff8b83;
+  background: rgba(255, 105, 97, 0.1);
+  border-color: rgba(255, 105, 97, 0.22);
+}

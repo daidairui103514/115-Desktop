@@ -35,8 +35,6 @@ pub fn run() {
         .manage(api115::AppState::new(data_dir.clone()))
         .invoke_handler(tauri::generate_handler![
             api115::login_with_token,
-            api115::qr_start,
-            api115::qr_poll,
             api115::auth_status,
             api115::list_files,
             api115::logout,

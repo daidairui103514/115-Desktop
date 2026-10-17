@@ -66,22 +66,6 @@ export interface UserProfile {
   space_remain?: string;
   space_total_bytes: number;
   space_used_bytes: number;
-  /** token = 开放平台令牌；cookie = 扫码登录 */
-  login_method: string;
-}
-
-export interface QrInfo {
-  uid: string;
-  time: number;
-  sign: string;
-  /** data:image/png;base64,... */
-  image: string;
-}
-
-export interface PollResult {
-  status: number;
-  message: string;
-  logged_in: boolean;
 }
 
 export interface AuthStatus {
