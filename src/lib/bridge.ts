@@ -54,3 +54,16 @@ export function toFileItem(entry: RemoteFile): FileItem {
     resolution: entry.resolution || undefined,
   };
 }
+
+const VIDEO_INLINE = ["mp4", "m4v", "webm", "mov"];
+const AUDIO_INLINE = ["mp3", "flac", "wav", "m4a", "aac", "ogg"];
+const IMAGE_INLINE = ["jpg", "jpeg", "png", "gif", "webp", "bmp"];
+
+/** WebView2 只能内嵌播 mp4/webm，其余交给系统程序 */
+export function previewKind(ext: string): "video" | "audio" | "image" | "other" {
+  const lower = ext.toLowerCase();
+  if (VIDEO_INLINE.includes(lower)) return "video";
+  if (AUDIO_INLINE.includes(lower)) return "audio";
+  if (IMAGE_INLINE.includes(lower)) return "image";
+  return "other";
+}

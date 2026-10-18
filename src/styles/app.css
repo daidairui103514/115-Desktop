@@ -1882,3 +1882,124 @@ button {
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- 内嵌预览 ---------- */
+.preview {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.93);
+}
+.preview__bar {
+  height: 46px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  color: #fff;
+}
+.preview__title {
+  font-size: 12.5px;
+  font-weight: 500;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview__meta {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+.preview__btn {
+  margin-left: auto;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 11.5px;
+}
+.preview__btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.preview__close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+.preview__close:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.preview__stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 24px 24px;
+  overflow: hidden;
+}
+.preview__video {
+  max-width: 100%;
+  max-height: 100%;
+  background: #000;
+  border-radius: 6px;
+}
+.preview__image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.preview__audio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.preview__audio-cover {
+  width: 200px;
+  height: 200px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.55);
+  background: linear-gradient(140deg, rgba(74, 163, 255, 0.32), rgba(14, 79, 184, 0.2));
+}
+.preview__audio-name {
+  color: #fff;
+  font-size: 13px;
+  max-width: 440px;
+  text-align: center;
+  line-height: 1.5;
+}
+.preview__audio-player {
+  width: 360px;
+}
+.preview__fallback {
+  color: rgba(255, 255, 255, 0.75);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  font-size: 12.5px;
+}
+
+/* ---------- 海报占位：用文件名首字代替灰块 ---------- */
+.media-card__initial {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.media-card__fallback {
+  background: linear-gradient(140deg, #3d7fbf, #1c3f66);
+}

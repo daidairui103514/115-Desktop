@@ -14,8 +14,9 @@ import { ToolboxPage } from "@/pages/ToolboxPage";
 import { MediaPage } from "@/pages/MediaPage";
 import { DownloadsPage } from "@/pages/DownloadsPage";
 import { WindowResizer } from "@/components/WindowResizer";
+import { PreviewModal, type PreviewKind } from "@/components/PreviewModal";
 import { MOCK_FILES } from "@/lib/mock";
-import { call, isTauri, toFileItem } from "@/lib/bridge";
+import { call, isTauri, previewKind, toFileItem } from "@/lib/bridge";
 import type {
   AuthStatus,
   FileItem,
@@ -97,6 +98,7 @@ export default function App() {
   const [recycleBusy, setRecycleBusy] = useState(false);
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const [offlineBusy, setOfflineBusy] = useState(false);
+  const [preview, setPreview] = useState<{ item: FileItem; url: string; kind: PreviewKind } | null>(null);
   const [stack, setStack] = useState<{ cid: string; name: string }[]>([ROOT]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -416,16 +418,38 @@ export default function App() {
         return;
       }
       try {
-        const url = await call<string>("video_play_url", { pc: item.pickCode });
-        const { openUrl } = await import("@tauri-apps/plugin-opener");
-        await openUrl(url);
-        notify("已用默认播放器打开");
+        const base = await call<string>("stream_base");
+        if (!base) {
+          notify("本地代理还没启动，请重启程序");
+          return;
+        }
+        const ext = (item.name.split(".").pop() ?? "").toLowerCase();
+        const url = `${base}/s/${item.pickCode}.${ext}`;
+        const kind = previewKind(ext);
+
+        if (kind === "other") {
+          const { openUrl } = await import("@tauri-apps/plugin-opener");
+          await openUrl(url);
+          notify("这个格式没法内嵌预览，已交给系统程序");
+          return;
+        }
+        setPreview({ item, url, kind });
       } catch (err) {
         notify(String(err));
       }
     },
     [notify],
   );
+
+  const openExternal = useCallback(async () => {
+    if (!preview) return;
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(preview.url);
+    } catch (err) {
+      notify(String(err));
+    }
+  }, [preview, notify]);
 
   const submitRename = useCallback(
     async (name: string) => {
@@ -543,8 +567,11 @@ export default function App() {
     if (item.kind === "folder") {
       actions.push({ label: "打开", onClick: () => openFolder(item) });
     }
-    if (item.kind === "video" || item.kind === "iso") {
-      actions.push({ label: "在线播放", onClick: () => void playItem(item) });
+    if (["video", "iso", "audio", "image"].includes(item.kind)) {
+      actions.push({
+        label: item.kind === "image" ? "预览" : "播放",
+        onClick: () => void playItem(item),
+      });
     }
     if (item.pickCode) {
       actions.push({ label: "下载到本地", onClick: () => void downloadItem(item) });
@@ -652,11 +679,7 @@ export default function App() {
             onDelete={(hash) => void deleteOffline(hash)}
           />
         ) : nav === "media" ? (
-          <MediaPage
-            files={visibleFiles}
-            loading={loading}
-            onPlay={(item) => void playItem(item)}
-          />
+          <MediaPage rootCid={currentCid} onPlay={(item) => void playItem(item)} />
         ) : nav === "downloads" ? (
           <DownloadsPage
             tasks={transfers}
@@ -757,6 +780,16 @@ export default function App() {
           hint={`已选 ${dialog.items.length} 项`}
           onPick={(cid) => void submitMoveOrCopy(cid)}
           onCancel={() => setDialog(null)}
+        />
+      ) : null}
+
+      {preview ? (
+        <PreviewModal
+          item={preview.item}
+          url={preview.url}
+          kind={preview.kind}
+          onClose={() => setPreview(null)}
+          onOpenExternal={() => void openExternal()}
         />
       ) : null}
 

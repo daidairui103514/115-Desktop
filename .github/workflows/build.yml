@@ -50,15 +50,33 @@ jobs:
           releaseDraft: false
           prerelease: false
 
-      # 便携版：把裸 exe 打成 zip，解压即用，缓存全在 exe 同级的 data 目录
+      # 便携版：整个文件夹打包，解压后是「115 Desktop」目录
       - name: package portable zip
         shell: pwsh
         run: |
           $src = "src-tauri/target/release/desktop115.exe"
           if (-not (Test-Path $src)) { throw "找不到 $src" }
-          New-Item -ItemType Directory -Force -Path portable | Out-Null
-          Copy-Item $src "portable/115 Desktop.exe"
-          Compress-Archive -Path "portable/115 Desktop.exe" -DestinationPath "115-Desktop-portable.zip" -Force
+          $root = "portable/115 Desktop"
+          New-Item -ItemType Directory -Force -Path "$root/data" | Out-Null
+          Copy-Item $src "$root/115 Desktop.exe"
+          @"
+          115 Desktop 便携版
+          ==================
+
+          双击「115 Desktop.exe」直接运行，不需要安装。
+
+          data 目录
+          ---------
+          首次运行后会自动写入：
+            data/EBWebView/     浏览器内核缓存
+            data/session.json   登录令牌
+            downloads/          默认下载位置
+
+          所有数据都在这个文件夹里，不写注册表，不碰系统盘的其他目录。
+          换电脑：整个「115 Desktop」文件夹拷走即可。
+          不用了：直接删掉这个文件夹，就算卸载完成。
+          "@ | Set-Content -Path "$root/使用说明.txt" -Encoding UTF8
+          Compress-Archive -Path $root -DestinationPath "115-Desktop-portable.zip" -Force
 
       - name: attach portable to release
         if: startsWith(github.ref, 'refs/tags/v')

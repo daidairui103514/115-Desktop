@@ -20,7 +20,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "stream", "blocking"] }
 tokio = { version = "1", features = ["time", "fs", "io-util"] }
 sha1 = "0.10"
 hmac = "0.12"
@@ -28,6 +28,7 @@ base64 = "0.22"
 hex = "0.4"
 httpdate = "1"
 futures-util = "0.3"
+tiny_http = "0.12"
 
 [profile.release]
 codegen-units = 1

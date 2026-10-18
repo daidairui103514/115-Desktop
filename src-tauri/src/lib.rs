@@ -1,5 +1,6 @@
 mod api115;
 mod download;
+mod stream;
 mod upload;
 
 use std::path::PathBuf;
@@ -60,6 +61,7 @@ pub fn run() {
             download::default_download_dir,
             download::open_download_dir,
             download::file_exists,
+            stream::stream_base,
         ])
         .setup(move |app| {
             // 无边框但**不透明**：Windows 上透明窗口会带来白屏、无阴影、
@@ -79,6 +81,9 @@ pub fn run() {
             .build()?;
 
             let _ = window.set_focus();
+
+            // 本地流代理：解决直链 UA 绑定导致的内嵌播放 403
+            stream::start(data_dir.clone());
 
             build_tray(app)?;
             Ok(())
