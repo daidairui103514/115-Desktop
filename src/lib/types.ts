@@ -88,6 +88,11 @@ export interface UploadResult {
   instant: boolean;
 }
 
+export interface PlayerInfo {
+  name: string;
+  path: string;
+}
+
 export interface AppSettings {
   tmdb_key: string;
   proxy: string;

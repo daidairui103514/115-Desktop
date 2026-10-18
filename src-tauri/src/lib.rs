@@ -1,6 +1,8 @@
 mod api115;
 mod download;
+mod player;
 mod settings;
+mod thumbnail;
 mod stream;
 mod tmdb;
 mod upload;
@@ -74,6 +76,11 @@ pub fn run() {
             tmdb::clear_poster_cache,
             settings::get_settings,
             settings::save_settings,
+            player::detect_players,
+            player::play_external,
+            thumbnail::extract_thumb,
+            thumbnail::ffmpeg_available,
+            thumbnail::clear_thumb_cache,
         ])
         .setup(move |app| {
             // 无边框但**不透明**：Windows 上透明窗口会带来白屏、无阴影、

@@ -82,7 +82,29 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
         cursor += 1;
         try {
           const dataUrl = await call<string>("tmdb_poster", { query: name });
-          if (!cancelled) setPosters((prev) => ({ ...prev, [name]: dataUrl }));
+          if (cancelled) continue;
+
+          if (dataUrl) {
+            setPosters((prev) => ({ ...prev, [name]: dataUrl }));
+            continue;
+          }
+
+          // TMDb 没找到海报，退一步用 ffmpeg 抽一帧当封面
+          const file = videos.find((video) => cleanMediaName(video.name) === name);
+          if (file?.pickCode) {
+            try {
+              const thumb = await call<string>("extract_thumb", {
+                pc: file.pickCode,
+                seconds: 180,
+              });
+              if (!cancelled && thumb) {
+                setPosters((prev) => ({ ...prev, [name]: thumb }));
+              }
+            } catch {
+              /* 抽帧失败就保持占位 */
+            }
+          }
+          if (!cancelled) setPosters((prev) => (prev[name] ? prev : { ...prev, [name]: "" }));
         } catch {
           if (!cancelled) setPosters((prev) => ({ ...prev, [name]: "" }));
         }
