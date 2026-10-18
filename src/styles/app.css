@@ -2038,3 +2038,75 @@ button {
 .tool-card .modal__input {
   max-width: 520px;
 }
+
+/* ---------- 批量重命名 ---------- */
+.rename-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin: 14px 0 12px;
+  background: var(--control);
+  border-radius: 8px;
+}
+.rename-tab {
+  flex: 1;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.rename-tab--active {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 550;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+[data-theme="dark"] .rename-tab--active {
+  background: #3a3a3e;
+}
+.rename-row {
+  display: flex;
+  gap: 10px;
+}
+.rename-preview {
+  margin-top: 14px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--inspector);
+  font-size: 11px;
+  line-height: 1.9;
+}
+.rename-preview__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rename-preview__old {
+  color: var(--text-3);
+  text-decoration: line-through;
+  flex: 0 1 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rename-preview__arrow {
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+.rename-preview__new {
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rename-preview__new--same {
+  color: var(--text-3);
+}
+.rename-preview__more {
+  color: var(--text-3);
+  padding-top: 4px;
+}

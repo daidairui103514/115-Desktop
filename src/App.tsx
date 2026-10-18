@@ -6,6 +6,7 @@ import { TransferBar } from "@/components/TransferBar";
 import { ContextMenu, type MenuAction } from "@/components/ContextMenu";
 import { ConfirmDialog, PromptDialog } from "@/components/Dialogs";
 import { FolderPicker } from "@/components/FolderPicker";
+import { BatchRename } from "@/components/BatchRename";
 import { FilesPage } from "@/pages/FilesPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { OfflinePage } from "@/pages/OfflinePage";
@@ -77,6 +78,7 @@ type DialogState =
   | { type: "delete"; items: FileItem[] }
   | { type: "move"; items: FileItem[] }
   | { type: "copy"; items: FileItem[] }
+  | { type: "batchRename"; items: FileItem[] }
   | null;
 
 function compareFiles(a: FileItem, b: FileItem, key: SortKey): number {
@@ -559,6 +561,28 @@ export default function App() {
     }
   }, [dialog, notify, refresh]);
 
+  const submitBatchRename = useCallback(
+    async (pairs: { id: string; name: string }[]) => {
+      setBusy(true);
+      let ok = 0;
+      let fail = 0;
+      for (const pair of pairs) {
+        try {
+          await call("rename_file", { fid: pair.id, name: pair.name });
+          ok += 1;
+        } catch {
+          fail += 1;
+        }
+      }
+      setBusy(false);
+      setDialog(null);
+      setSelectedIds([]);
+      await refresh();
+      notify(fail > 0 ? `改名完成 ${ok} 项，失败 ${fail} 项` : `已改名 ${ok} 项`);
+    },
+    [notify, refresh],
+  );
+
   const submitMoveOrCopy = useCallback(
     async (targetCid: string) => {
       if (dialog?.type !== "move" && dialog?.type !== "copy") return;
@@ -642,6 +666,12 @@ export default function App() {
       label: "复制到…",
       onClick: () => setDialog({ type: "copy", items: targets }),
     });
+    if (targets.length > 1) {
+      actions.push({
+        label: `批量重命名（${targets.length} 项）`,
+        onClick: () => setDialog({ type: "batchRename", items: targets }),
+      });
+    }
     actions.push({
       label: "重命名",
       onClick: () => setDialog({ type: "rename", item }),
@@ -849,6 +879,15 @@ export default function App() {
           kind={preview.kind}
           onClose={() => setPreview(null)}
           onOpenExternal={() => void openExternal()}
+        />
+      ) : null}
+
+      {dialog?.type === "batchRename" ? (
+        <BatchRename
+          files={dialog.items}
+          busy={busy}
+          onApply={(pairs) => void submitBatchRename(pairs)}
+          onCancel={() => setDialog(null)}
         />
       ) : null}
 
