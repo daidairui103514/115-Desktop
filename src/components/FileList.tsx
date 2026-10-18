@@ -7,6 +7,7 @@ interface FileListProps {
   selectedIds: string[];
   onSelect: (id: string, additive: boolean) => void;
   onOpen: (item: FileItem) => void;
+  onPlay: (item: FileItem) => void;
   onContextMenu: (x: number, y: number, item: FileItem) => void;
   viewMode: ViewMode;
   sortKey: SortKey;
@@ -30,6 +31,7 @@ export function FileList({
   selectedIds,
   onSelect,
   onOpen,
+  onPlay,
   onContextMenu,
   viewMode,
   sortKey,
@@ -53,7 +55,7 @@ export function FileList({
               aria-selected={active}
               className={`grid-card${active ? " grid-card--active" : ""}`}
               onClick={(event) => onSelect(file.id, event.ctrlKey || event.metaKey)}
-              onDoubleClick={() => onOpen(file)}
+              onDoubleClick={() => (file.kind === "folder" ? onOpen(file) : onPlay(file))}
               onContextMenu={(event) => {
                 event.preventDefault();
                 onSelect(file.id, false);
@@ -114,7 +116,7 @@ export function FileList({
               aria-selected={active}
               className={`row${active ? " row--active" : ""}`}
               onClick={(event) => onSelect(file.id, event.ctrlKey || event.metaKey)}
-              onDoubleClick={() => onOpen(file)}
+              onDoubleClick={() => (file.kind === "folder" ? onOpen(file) : onPlay(file))}
               onContextMenu={(event) => {
                 event.preventDefault();
                 onSelect(file.id, false);
@@ -123,7 +125,8 @@ export function FileList({
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  onOpen(file);
+                  if (file.kind === "folder") onOpen(file);
+                  else onPlay(file);
                 }
               }}
             >

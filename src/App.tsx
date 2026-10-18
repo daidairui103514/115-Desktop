@@ -765,7 +765,7 @@ export default function App() {
             onDelete={(hash) => void deleteOffline(hash)}
           />
         ) : nav === "media" ? (
-          <MediaPage rootCid={currentCid} onPlay={(item) => void playItem(item)} />
+          <MediaPage onPlay={(item) => void playItem(item)} />
         ) : nav === "downloads" ? (
           <DownloadsPage
             tasks={transfers}
@@ -792,6 +792,7 @@ export default function App() {
             selectedIds={selectedIds}
             onSelect={handleSelect}
             onOpen={openFolder}
+            onPlay={(item) => void playItem(item)}
             onContextMenu={(x, y, item) => setMenu({ x, y, item })}
             onCrumb={goToCrumb}
             viewMode={viewMode}

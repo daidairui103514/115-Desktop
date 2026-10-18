@@ -2139,3 +2139,37 @@ button {
   border-radius: 5px;
   background: var(--control);
 }
+
+/* ---------- 媒体库：目录徽标 ---------- */
+.media-folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 20px 2px;
+}
+.media-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 4px 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.media-folder__x {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--text-3);
+  line-height: 1;
+}
+.media-folder__x:hover {
+  background: var(--hover);
+  color: var(--text);
+}

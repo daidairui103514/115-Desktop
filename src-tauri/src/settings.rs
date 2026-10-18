@@ -8,6 +8,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
+pub struct MediaFolder {
+    pub cid: String,
+    pub name: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Settings {
     /// TMDb v3 API Key，留空则海报功能关闭
     pub tmdb_key: String,
@@ -19,6 +25,9 @@ pub struct Settings {
     pub preferred_quality: String,
     /// 115 开放平台应用的 AppID，用于设备码扫码登录
     pub open_client_id: String,
+    /// 媒体库要扫描的文件夹（可多个）
+    #[serde(default)]
+    pub media_folders: Vec<MediaFolder>,
 }
 
 impl Default for Settings {
@@ -29,6 +38,7 @@ impl Default for Settings {
             download_dir: String::new(),
             preferred_quality: "auto".into(),
             open_client_id: String::new(),
+            media_folders: Vec::new(),
         }
     }
 }

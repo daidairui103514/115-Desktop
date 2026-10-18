@@ -2,17 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/Icons";
 import { FolderPicker } from "@/components/FolderPicker";
 import { call, cleanMediaName, isTauri, toFileItem } from "@/lib/bridge";
-import type { FileItem, RemoteFile } from "@/lib/types";
+import type { AppSettings, FileItem, MediaFolder, RemoteFile } from "@/lib/types";
 
 interface MediaPageProps {
-  rootCid: string;
   onPlay: (item: FileItem) => void;
 }
 
-/** 海报墙：递归扫描目录，按片名去 TMDb 抓海报 */
-export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
-  const [videos, setVideos] = useState<FileItem[]>([]);
-  const [dirLabel, setDirLabel] = useState("当前目录");
+/** 媒体库：由用户指定若干文件夹，递归扫描后统一铺成海报墙 */
+export function MediaPage({ onPlay }: MediaPageProps) {
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [folders, setFolders] = useState<MediaFolder[]>([]);
+  const [items, setItems] = useState<FileItem[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(0);
   const [picking, setPicking] = useState(false);
@@ -21,25 +21,51 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
 
   const fetched = useRef<Set<string>>(new Set());
 
-  const scan = useCallback(async (cid: string, label: string) => {
+  const scanAll = useCallback(async (list: MediaFolder[]) => {
+    if (list.length === 0) {
+      setItems([]);
+      return;
+    }
     setScanning(true);
     setScanned(0);
     setError("");
-    setVideos([]);
-    try {
-      const entries = await call<RemoteFile[]>("scan_media", { rootCid: cid });
-      setVideos(entries.map(toFileItem));
-      setDirLabel(label);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setScanning(false);
+
+    const merged: FileItem[] = [];
+    const seen = new Set<string>();
+
+    for (const folder of list) {
+      try {
+        const entries = await call<RemoteFile[]>("scan_media", { rootCid: folder.cid });
+        for (const entry of entries) {
+          if (!seen.has(entry.id)) {
+            seen.add(entry.id);
+            merged.push(toFileItem(entry));
+          }
+        }
+      } catch (err) {
+        setError(String(err));
+      }
     }
+
+    setItems(merged);
+    setScanning(false);
   }, []);
 
   useEffect(() => {
-    void scan(rootCid, "当前目录");
-  }, [rootCid, scan]);
+    if (!isTauri()) return;
+    void (async () => {
+      try {
+        const loaded = await call<AppSettings>("get_settings");
+        setSettings(loaded);
+        setFolders(loaded.media_folders ?? []);
+        if ((loaded.media_folders ?? []).length > 0) {
+          void scanAll(loaded.media_folders);
+        }
+      } catch (err) {
+        setError(String(err));
+      }
+    })();
+  }, [scanAll]);
 
   /* 扫描进度 */
   useEffect(() => {
@@ -62,11 +88,44 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
     };
   }, []);
 
-  /* 逐个片名去 TMDb 找海报，并发 3 免得触发限流 */
-  useEffect(() => {
-    if (videos.length === 0 || !isTauri()) return;
+  const persist = useCallback(
+    async (next: MediaFolder[]) => {
+      setFolders(next);
+      if (!settings) return;
+      const updated = { ...settings, media_folders: next };
+      setSettings(updated);
+      try {
+        await call("save_settings", { settings: updated });
+      } catch (err) {
+        setError(String(err));
+      }
+    },
+    [settings],
+  );
 
-    const names = [...new Set(videos.map((file) => cleanMediaName(file.name)))].filter(
+  const addFolder = useCallback(
+    async (cid: string, name: string) => {
+      const next = [...folders.filter((folder) => folder.cid !== cid), { cid, name }];
+      await persist(next);
+      void scanAll(next);
+    },
+    [folders, persist, scanAll],
+  );
+
+  const removeFolder = useCallback(
+    async (cid: string) => {
+      const next = folders.filter((folder) => folder.cid !== cid);
+      await persist(next);
+      void scanAll(next);
+    },
+    [folders, persist, scanAll],
+  );
+
+  /* 逐个片名刮封面 */
+  useEffect(() => {
+    if (items.length === 0 || !isTauri()) return;
+
+    const names = [...new Set(items.map((file) => cleanMediaName(file.name)))].filter(
       (name) => name && !fetched.current.has(name),
     );
     if (names.length === 0) return;
@@ -80,47 +139,37 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
       while (cursor < names.length && !cancelled) {
         const name = names[cursor];
         cursor += 1;
-        const target = videos.find((video) => cleanMediaName(video.name) === name);
+        const target = items.find((item) => cleanMediaName(item.name) === name);
         const isAudio = target?.kind === "audio";
 
         try {
-          // 音频走网易云专辑封面，视频走 TMDb
           let dataUrl = await call<string>(isAudio ? "music_poster" : "tmdb_poster", {
             query: name,
           });
           if (cancelled) continue;
 
-          // TMDb 没有就退到 Bangumi（新番、国漫收录更全）
           if (!dataUrl && !isAudio) {
             try {
               dataUrl = await call<string>("bangumi_poster", { query: name });
             } catch {
-              /* Bangumi 不可用就继续往下 */
+              /* 忽略 */
             }
             if (cancelled) continue;
           }
 
-          if (dataUrl) {
-            setPosters((prev) => ({ ...prev, [name]: dataUrl }));
-            continue;
-          }
-
-          // TMDb 没找到海报，退一步用 ffmpeg 抽一帧当封面
-          const file = target;
-          if (file?.pickCode && !isAudio) {
+          if (!dataUrl && !isAudio && target?.pickCode) {
             try {
-              const thumb = await call<string>("extract_thumb", {
-                pc: file.pickCode,
+              dataUrl = await call<string>("extract_thumb", {
+                pc: target.pickCode,
                 seconds: 180,
               });
-              if (!cancelled && thumb) {
-                setPosters((prev) => ({ ...prev, [name]: thumb }));
-              }
             } catch {
-              /* 抽帧失败就保持占位 */
+              /* 忽略 */
             }
+            if (cancelled) continue;
           }
-          if (!cancelled) setPosters((prev) => (prev[name] ? prev : { ...prev, [name]: "" }));
+
+          setPosters((prev) => ({ ...prev, [name]: dataUrl }));
         } catch {
           if (!cancelled) setPosters((prev) => ({ ...prev, [name]: "" }));
         }
@@ -132,31 +181,53 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [videos]);
+  }, [items]);
 
-  /** 优先 115 自带缩略图，其次本地缓存下来的 TMDb 海报（data URL） */
-  const resolveCover = (file: FileItem): string => {
-    return file.thumb || file.vImg || posters[cleanMediaName(file.name)] || "";
-  };
+  const resolveCover = (file: FileItem): string =>
+    file.thumb || file.vImg || posters[cleanMediaName(file.name)] || "";
 
   return (
     <main className="content">
       <div className="pathbar">
         <span className="pathbar__crumb pathbar__crumb--current">媒体库</span>
-        <span className="pathbar__sep">·</span>
-        <span className="pathbar__crumb">{dirLabel}</span>
         <span className="pathbar__count">
-          {scanning ? `正在扫描第 ${scanned} 个文件夹…` : `${videos.length} 个视频`}
+          {scanning
+            ? `正在扫描第 ${scanned} 个目录…`
+            : `${items.length} 个文件 · ${folders.length} 个目录`}
         </span>
-        <button
-          type="button"
-          className="pathbar__action"
-          onClick={() => setPicking(true)}
-          disabled={scanning}
-        >
-          选择文件夹
+        <button type="button" className="pathbar__action" onClick={() => setPicking(true)}>
+          添加文件夹
         </button>
+        {folders.length > 0 ? (
+          <button
+            type="button"
+            className="pathbar__action"
+            onClick={() => void scanAll(folders)}
+            disabled={scanning}
+          >
+            重新扫描
+          </button>
+        ) : null}
       </div>
+
+      {folders.length > 0 ? (
+        <div className="media-folders">
+          {folders.map((folder) => (
+            <span className="media-folder" key={folder.cid}>
+              <Icon name="folder" size={12} style={{ color: "var(--accent)" }} />
+              {folder.name}
+              <button
+                type="button"
+                className="media-folder__x"
+                aria-label="移除"
+                onClick={() => void removeFolder(folder.cid)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="empty">
@@ -165,26 +236,33 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
       ) : scanning ? (
         <div className="empty">
           <div className="spinner" />
-          <span>正在递归扫描子文件夹…（已扫描 {scanned} 个）</span>
+          <span>正在递归扫描…（已扫描 {scanned} 个目录）</span>
           <span style={{ fontSize: 11, color: "var(--text-3)" }}>
-            115 接口有限流，每个目录大约 1 秒
+            115 接口限流，每个目录约 1 秒
           </span>
         </div>
-      ) : videos.length === 0 ? (
+      ) : folders.length === 0 ? (
         <div className="empty">
-          <span>这个目录里没有找到视频</span>
+          <span>还没有指定媒体文件夹</span>
+          <span style={{ fontSize: 11, color: "var(--text-3)" }}>
+            可以添加多个目录，比如「电影」「电视剧」「番剧」
+          </span>
           <button
             type="button"
             className="modal__btn modal__btn--primary"
             style={{ marginTop: 6 }}
             onClick={() => setPicking(true)}
           >
-            换个文件夹
+            添加文件夹
           </button>
+        </div>
+      ) : items.length === 0 ? (
+        <div className="empty">
+          <span>这些目录里没有找到可播放的文件</span>
         </div>
       ) : (
         <div className="media-grid">
-          {videos.map((file) => {
+          {items.map((file) => {
             const cover = resolveCover(file);
             return (
               <button
@@ -199,7 +277,7 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
                     <img src={cover} alt="" loading="lazy" referrerPolicy="no-referrer" />
                   ) : (
                     <span className="media-card__fallback">
-                      <Icon name="film" size={26} />
+                      <Icon name={file.kind === "audio" ? "film" : "document"} size={26} />
                       <span className="media-card__initial">
                         {cleanMediaName(file.name).slice(0, 8) || file.name.slice(0, 8)}
                       </span>
@@ -223,11 +301,11 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
 
       {picking ? (
         <FolderPicker
-          title="选择媒体文件夹"
-          confirmText="扫描这个文件夹"
+          title="添加媒体文件夹"
+          confirmText="添加"
           onPick={(cid, path) => {
             setPicking(false);
-            void scan(cid, path[path.length - 1] ?? "所选目录");
+            void addFolder(cid, path[path.length - 1] ?? "未命名目录");
           }}
           onCancel={() => setPicking(false)}
         />

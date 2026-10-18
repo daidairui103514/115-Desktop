@@ -93,12 +93,18 @@ export interface PlayerInfo {
   path: string;
 }
 
+export interface MediaFolder {
+  cid: string;
+  name: string;
+}
+
 export interface AppSettings {
   tmdb_key: string;
   proxy: string;
   download_dir: string;
   preferred_quality: string;
   open_client_id: string;
+  media_folders: MediaFolder[];
 }
 
 export interface TmdbHit {

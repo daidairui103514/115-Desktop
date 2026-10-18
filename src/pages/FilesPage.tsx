@@ -8,6 +8,7 @@ interface FilesPageProps {
   selectedIds: string[];
   onSelect: (id: string, additive: boolean) => void;
   onOpen: (item: FileItem) => void;
+  onPlay: (item: FileItem) => void;
   onContextMenu: (x: number, y: number, item: FileItem) => void;
   onCrumb: (index: number) => void;
   viewMode: ViewMode;
@@ -26,6 +27,7 @@ export function FilesPage({
   selectedIds,
   onSelect,
   onOpen,
+  onPlay,
   onContextMenu,
   onCrumb,
   viewMode,
@@ -79,6 +81,7 @@ export function FilesPage({
           selectedIds={selectedIds}
           onSelect={onSelect}
           onOpen={onOpen}
+          onPlay={onPlay}
           onContextMenu={onContextMenu}
           viewMode={viewMode}
           sortKey={sortKey}
