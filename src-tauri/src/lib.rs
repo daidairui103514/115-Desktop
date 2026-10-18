@@ -1,6 +1,8 @@
 mod api115;
 mod bangumi;
 mod download;
+mod magnet;
+mod music;
 mod open_login;
 mod player;
 mod settings;
@@ -74,6 +76,9 @@ pub fn run() {
             stream::stream_base,
             tmdb::tmdb_search,
             bangumi::bangumi_search,
+            music::music_search,
+            music::music_poster,
+            magnet::magnet_info,
             bangumi::bangumi_poster,
             tmdb::tmdb_poster,
             tmdb::tmdb_status,

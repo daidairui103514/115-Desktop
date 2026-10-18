@@ -80,12 +80,18 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
       while (cursor < names.length && !cancelled) {
         const name = names[cursor];
         cursor += 1;
+        const target = videos.find((video) => cleanMediaName(video.name) === name);
+        const isAudio = target?.kind === "audio";
+
         try {
-          let dataUrl = await call<string>("tmdb_poster", { query: name });
+          // 音频走网易云专辑封面，视频走 TMDb
+          let dataUrl = await call<string>(isAudio ? "music_poster" : "tmdb_poster", {
+            query: name,
+          });
           if (cancelled) continue;
 
           // TMDb 没有就退到 Bangumi（新番、国漫收录更全）
-          if (!dataUrl) {
+          if (!dataUrl && !isAudio) {
             try {
               dataUrl = await call<string>("bangumi_poster", { query: name });
             } catch {
@@ -100,8 +106,8 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
           }
 
           // TMDb 没找到海报，退一步用 ffmpeg 抽一帧当封面
-          const file = videos.find((video) => cleanMediaName(video.name) === name);
-          if (file?.pickCode) {
+          const file = target;
+          if (file?.pickCode && !isAudio) {
             try {
               const thumb = await call<string>("extract_thumb", {
                 pc: file.pickCode,
