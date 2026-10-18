@@ -2110,3 +2110,32 @@ button {
   color: var(--text-3);
   padding-top: 4px;
 }
+
+/* ---------- 磁力解析预览 ---------- */
+.magnet-preview {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--inspector);
+}
+.magnet-preview__name {
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.magnet-preview__shots {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.magnet-preview__shots img {
+  flex: 1;
+  min-width: 0;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 5px;
+  background: var(--control);
+}

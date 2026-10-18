@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { call } from "@/lib/bridge";
 import type { OfflineTask } from "@/lib/types";
 
 interface OfflinePageProps {
@@ -28,6 +29,40 @@ function formatTime(seconds: number): string {
 export function OfflinePage({ tasks, loading, error, busy, onAdd, onDelete }: OfflinePageProps) {
   const [adding, setAdding] = useState(false);
   const [input, setInput] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [magnet, setMagnet] = useState<Record<string, unknown> | null>(null);
+
+  const parseMagnet = async () => {
+    const link = input
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.startsWith("magnet:"));
+    if (!link) {
+      setMagnet(null);
+      return;
+    }
+    setParsing(true);
+    try {
+      const info = await call<Record<string, unknown>>("magnet_info", { url: link });
+      setMagnet(info);
+    } catch (err) {
+      setMagnet({ error: String(err) });
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const human = (bytes: number) => {
+    if (!bytes) return "—";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let value = bytes;
+    let idx = 0;
+    while (value >= 1024 && idx < units.length - 1) {
+      value /= 1024;
+      idx += 1;
+    }
+    return `${value >= 100 || idx === 0 ? Math.round(value) : value.toFixed(1)} ${units[idx]}`;
+  };
 
   const submit = () => {
     const urls = input
@@ -38,6 +73,7 @@ export function OfflinePage({ tasks, loading, error, busy, onAdd, onDelete }: Of
     if (!urls) return;
     onAdd(urls);
     setInput("");
+    setMagnet(null);
     setAdding(false);
   };
 
@@ -127,7 +163,55 @@ export function OfflinePage({ tasks, loading, error, busy, onAdd, onDelete }: Of
               placeholder={"magnet:?xt=urn:btih:...\ned2k://|file|...|/"}
               onChange={(event) => setInput(event.target.value)}
             />
+            {magnet ? (
+              <div className="magnet-preview">
+                {typeof magnet.error === "string" ? (
+                  <span className="offline-item__fail">{magnet.error}</span>
+                ) : (
+                  <>
+                    <div className="magnet-preview__name">
+                      {String(magnet.name ?? "未命名")}
+                    </div>
+                    <div className="offline-item__meta">
+                      {human(Number(magnet.size ?? 0))}
+                      <span className="dot-sep" />
+                      {String(magnet.count ?? 0)} 个文件
+                      {magnet.type ? (
+                        <>
+                          <span className="dot-sep" />
+                          {String(magnet.type)}
+                        </>
+                      ) : null}
+                    </div>
+                    {Array.isArray(magnet.screenshots) && magnet.screenshots.length > 0 ? (
+                      <div className="magnet-preview__shots">
+                        {(magnet.screenshots as { screenshot?: string }[])
+                          .slice(0, 3)
+                          .map((shot, index) => (
+                            <img
+                              key={index}
+                              src={shot.screenshot}
+                              alt=""
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                            />
+                          ))}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+
             <div className="modal__actions">
+              <button
+                type="button"
+                className="modal__btn"
+                onClick={() => void parseMagnet()}
+                disabled={parsing || !input.trim()}
+              >
+                {parsing ? "解析中…" : "解析磁力"}
+              </button>
               <button type="button" className="modal__btn" onClick={() => setAdding(false)}>
                 取消
               </button>
