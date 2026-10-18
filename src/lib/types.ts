@@ -21,6 +21,7 @@ export interface FileItem {
   modifiedText: string;
   starred?: boolean;
   thumb?: string;
+  vImg?: string;
   sha1?: string;
   /** 文件夹的 115 cid，用于进入目录 */
   cid?: string;
@@ -50,6 +51,7 @@ export interface RemoteFile {
   pick_code: string;
   sha1: string;
   thumb: string;
+  v_img: string;
   starred: boolean;
   duration: string;
   resolution: string;

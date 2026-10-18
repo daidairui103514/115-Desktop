@@ -439,6 +439,7 @@ export default function App() {
 
         // 视频优先走 115 的 HLS：云端已转码，mkv/avi/iso 都能播
         if (VIDEO_EXTS.includes(ext)) {
+          let hlsError = "";
           try {
             const m3u8 = await call<string>("video_play_url", { pc: item.pickCode });
             setPreview({
@@ -448,18 +449,20 @@ export default function App() {
               kind: "video",
             });
             return;
-          } catch {
-            /* 未转码或接口失败，回退 */
+          } catch (err) {
+            hlsError = String(err);
           }
 
+          // mp4/webm 这类浏览器原生能解的，回退到直链
           if (previewKind(ext) === "video") {
             setPreview({ item, url: directUrl, kind: "video" });
             return;
           }
 
-          const { openUrl } = await import("@tauri-apps/plugin-opener");
-          await openUrl(directUrl);
-          notify("这个格式需要先在 115 云端转码，已交给系统程序");
+          // 其余格式浏览器解不了，不要静默打开浏览器（会变成下载几十 GB）
+          notify(
+            `${ext.toUpperCase()} 需要 115 云端转码后才能在线播放。\n${hlsError}\n可以右键「用 IDM 下载」到本地观看。`,
+          );
           return;
         }
 

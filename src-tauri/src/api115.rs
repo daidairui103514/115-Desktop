@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 use serde_json::Value;
 
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
@@ -64,6 +65,8 @@ pub struct FileEntry {
     pub pick_code: String,
     pub sha1: String,
     pub thumb: String,
+    /// 视频封面帧（部分文件才有）
+    pub v_img: String,
     pub starred: bool,
     pub duration: String,
     pub resolution: String,
@@ -521,6 +524,88 @@ pub async fn list_files(
     })
 }
 
+/// 递归扫描目录，收集所有视频。限制目录数与层级，避免打爆 115 的频率限制。
+#[tauri::command]
+pub async fn scan_media(
+    app: tauri::AppHandle,
+    root_cid: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<FileEntry>, String> {
+    const MAX_DIRS: u32 = 40;
+    const MAX_DEPTH: u32 = 2;
+
+    let mut queue: Vec<(String, u32)> = vec![(root_cid, 0)];
+    let mut videos: Vec<FileEntry> = Vec::new();
+    let mut scanned = 0u32;
+
+    while let Some((cid, depth)) = queue.pop() {
+        if scanned >= MAX_DIRS {
+            break;
+        }
+        scanned += 1;
+        let _ = app.emit("media:scan", scanned);
+
+        let mut tokens = state
+            .tokens
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .ok_or("尚未登录")?;
+        ensure_access(&state.data_dir, &mut tokens).await?;
+
+        throttle().await;
+        let http = client()?;
+        let offset_s = "0".to_string();
+        let limit_s = "115".to_string();
+
+        let resp = http
+            .get(format!("{PROAPI}/open/ufile/files"))
+            .query(&[
+                ("cid", cid.clone()),
+                ("offset", offset_s),
+                ("limit", limit_s),
+                ("show_dir", "1".to_string()),
+            ])
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", tokens.access_token),
+            )
+            .send()
+            .await
+            .map_err(|e| net_err("扫描目录失败", e))?;
+
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("解析目录失败: {e}"))?;
+
+        if let Ok(mut guard) = state.tokens.lock() {
+            *guard = Some(tokens);
+        }
+        if !is_ok(&body) {
+            continue;
+        }
+
+        let arr = body
+            .get("data")
+            .and_then(|d| d.as_array().cloned())
+            .unwrap_or_default();
+
+        for item in &arr {
+            let entry = map_entry(item);
+            if entry.is_dir {
+                if depth + 1 < MAX_DEPTH && !entry.cid.is_empty() {
+                    queue.push((entry.cid.clone(), depth + 1));
+                }
+            } else if entry.kind == "video" || entry.kind == "iso" {
+                videos.push(entry);
+            }
+        }
+    }
+
+    Ok(videos)
+}
+
 #[tauri::command]
 pub async fn offline_tasks(
     page: u64,
@@ -671,6 +756,7 @@ fn map_entry(item: &Value) -> FileEntry {
         pick_code: s("pc"),
         sha1: s("sha1"),
         thumb: s("thumb"),
+        v_img: s("v_img"),
         starred: s("ism") == "1",
         duration: format_duration(n("play_long")),
         resolution: resolution_label(n("def")),

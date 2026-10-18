@@ -2003,3 +2003,25 @@ button {
 .media-card__fallback {
   background: linear-gradient(140deg, #3d7fbf, #1c3f66);
 }
+
+/* ---------- 海报占位：图标 + 短标题，不再是空色块 ---------- */
+.media-card__fallback {
+  flex-direction: column;
+  gap: 10px;
+  background: linear-gradient(145deg, #2b4f72, #16283d);
+}
+.media-card__fallback svg {
+  opacity: 0.5;
+}
+.media-card__initial {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+  padding: 0 12px;
+  text-align: center;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

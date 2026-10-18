@@ -49,6 +49,7 @@ export function toFileItem(entry: RemoteFile): FileItem {
     cid: entry.is_dir ? entry.cid : undefined,
     pickCode: entry.pick_code || undefined,
     thumb: entry.thumb || undefined,
+    vImg: entry.v_img || undefined,
     starred: entry.starred || undefined,
     duration: entry.duration || undefined,
     resolution: entry.resolution || undefined,

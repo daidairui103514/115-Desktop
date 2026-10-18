@@ -43,6 +43,7 @@ pub fn run() {
             api115::logout,
             api115::list_files,
             api115::search_files,
+            api115::scan_media,
             api115::rename_file,
             api115::delete_files,
             api115::move_files,
