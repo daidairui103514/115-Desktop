@@ -1,7 +1,7 @@
 {
   "name": "115-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.7",
   "type": "module",
   "description": "115 Desktop — a lightweight third-party 115 cloud drive client",
   "scripts": {

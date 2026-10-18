@@ -1,6 +1,6 @@
 [package]
 name = "desktop115"
-version = "0.1.0"
+version = "0.1.7"
 description = "115 Desktop — a lightweight third-party 115 cloud drive client"
 authors = ["daidairui103514"]
 edition = "2021"
