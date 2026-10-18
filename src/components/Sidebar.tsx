@@ -12,6 +12,7 @@ const NAV_ICON: Record<NavKey, IconName> = {
   trash: "trash",
   media: "film",
   toolbox: "wrench",
+  settings: "settings",
 };
 
 interface SidebarProps {

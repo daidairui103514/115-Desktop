@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/Icons";
 import { FolderPicker } from "@/components/FolderPicker";
-import { call, isTauri, toFileItem } from "@/lib/bridge";
+import { call, cleanMediaName, isTauri, toFileItem } from "@/lib/bridge";
 import type { FileItem, RemoteFile } from "@/lib/types";
 
 interface MediaPageProps {
@@ -9,7 +9,7 @@ interface MediaPageProps {
   onPlay: (item: FileItem) => void;
 }
 
-/** 海报墙：递归扫描目录，把散在各子文件夹里的视频摊平展示 */
+/** 海报墙：递归扫描目录，按片名去 TMDb 抓海报 */
 export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
   const [videos, setVideos] = useState<FileItem[]>([]);
   const [dirLabel, setDirLabel] = useState("当前目录");
@@ -17,6 +17,9 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
   const [scanned, setScanned] = useState(0);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
+  const [posters, setPosters] = useState<Record<string, string>>({});
+
+  const fetched = useRef<Set<string>>(new Set());
 
   const scan = useCallback(async (cid: string, label: string) => {
     setScanning(true);
@@ -38,6 +41,7 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
     void scan(rootCid, "当前目录");
   }, [rootCid, scan]);
 
+  /* 扫描进度 */
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -58,6 +62,45 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
     };
   }, []);
 
+  /* 逐个片名去 TMDb 找海报，并发 3 免得触发限流 */
+  useEffect(() => {
+    if (videos.length === 0 || !isTauri()) return;
+
+    const names = [...new Set(videos.map((file) => cleanMediaName(file.name)))].filter(
+      (name) => name && !fetched.current.has(name),
+    );
+    if (names.length === 0) return;
+
+    names.forEach((name) => fetched.current.add(name));
+
+    let cancelled = false;
+    let cursor = 0;
+
+    const worker = async () => {
+      while (cursor < names.length && !cancelled) {
+        const name = names[cursor];
+        cursor += 1;
+        try {
+          const dataUrl = await call<string>("tmdb_poster", { query: name });
+          if (!cancelled) setPosters((prev) => ({ ...prev, [name]: dataUrl }));
+        } catch {
+          if (!cancelled) setPosters((prev) => ({ ...prev, [name]: "" }));
+        }
+      }
+    };
+
+    void Promise.all([worker(), worker(), worker()]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [videos]);
+
+  /** 优先 115 自带缩略图，其次本地缓存下来的 TMDb 海报（data URL） */
+  const resolveCover = (file: FileItem): string => {
+    return file.thumb || file.vImg || posters[cleanMediaName(file.name)] || "";
+  };
+
   return (
     <main className="content">
       <div className="pathbar">
@@ -65,9 +108,7 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
         <span className="pathbar__sep">·</span>
         <span className="pathbar__crumb">{dirLabel}</span>
         <span className="pathbar__count">
-          {scanning
-            ? `正在扫描第 ${scanned} 个文件夹…`
-            : `${videos.length} 个视频`}
+          {scanning ? `正在扫描第 ${scanned} 个文件夹…` : `${videos.length} 个视频`}
         </span>
         <button
           type="button"
@@ -106,7 +147,7 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
       ) : (
         <div className="media-grid">
           {videos.map((file) => {
-            const poster = file.thumb || file.vImg;
+            const cover = resolveCover(file);
             return (
               <button
                 type="button"
@@ -116,13 +157,13 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
                 title={file.name}
               >
                 <span className="media-card__poster">
-                  {poster ? (
-                    <img src={poster} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                  {cover ? (
+                    <img src={cover} alt="" loading="lazy" referrerPolicy="no-referrer" />
                   ) : (
                     <span className="media-card__fallback">
                       <Icon name="film" size={26} />
                       <span className="media-card__initial">
-                        {file.name.replace(/\.[^.]+$/, "").slice(0, 6)}
+                        {cleanMediaName(file.name).slice(0, 8) || file.name.slice(0, 8)}
                       </span>
                     </span>
                   )}

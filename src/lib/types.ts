@@ -88,6 +88,22 @@ export interface UploadResult {
   instant: boolean;
 }
 
+export interface AppSettings {
+  tmdb_key: string;
+  proxy: string;
+  download_dir: string;
+  preferred_quality: string;
+}
+
+export interface TmdbHit {
+  id: number;
+  title: string;
+  year: string;
+  poster: string;
+  overview: string;
+  media_type: string;
+}
+
 export interface RecycleItem {
   id: string;
   name: string;
@@ -127,7 +143,8 @@ export type NavKey =
   | "offline"
   | "trash"
   | "media"
-  | "toolbox";
+  | "toolbox"
+  | "settings";
 
 export interface NavItem {
   key: NavKey;

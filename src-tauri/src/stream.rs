@@ -65,6 +65,11 @@ pub fn start(data_dir: PathBuf) {
                     Some(url) => hls_manifest(&url),
                     None => Err("缺少 u 参数".to_string()),
                 }
+            } else if path.starts_with("/img") {
+                match target {
+                    Some(url) => image_proxy(&url),
+                    None => Err("缺少 u 参数".to_string()),
+                }
             } else if path.starts_with("/fwd") {
                 match target {
                     Some(url) => forward(&request, &url),
@@ -125,6 +130,37 @@ fn header_value(request: &tiny_http::Request, name: &str) -> Option<String> {
         .iter()
         .find(|h| format!("{}", h.field).eq_ignore_ascii_case(name))
         .map(|h| h.value.as_str().to_string())
+}
+
+/// 系统代理地址。TMDb 在国内直连不通，必须走代理。
+fn proxy_url() -> String {
+    std::env::var("HTTPS_PROXY")
+        .or_else(|_| std::env::var("https_proxy"))
+        .or_else(|_| std::env::var("HTTP_PROXY"))
+        .or_else(|_| std::env::var("http_proxy"))
+        .unwrap_or_else(|_| "http://127.0.0.1:10808".to_string())
+}
+
+/// 走代理的异步客户端（TMDb API 用）
+pub(crate) fn proxied_client() -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder()
+        .user_agent(UA)
+        .timeout(Duration::from_secs(30));
+    if let Ok(proxy) = reqwest::Proxy::all(proxy_url()) {
+        builder = builder.proxy(proxy);
+    }
+    builder.build().map_err(|e| e.to_string())
+}
+
+/// 走代理的阻塞客户端（海报图片用）
+fn proxied_blocking_client() -> Result<reqwest::blocking::Client, String> {
+    let mut builder = reqwest::blocking::Client::builder()
+        .user_agent(UA)
+        .timeout(Duration::from_secs(45));
+    if let Ok(proxy) = reqwest::Proxy::all(proxy_url()) {
+        builder = builder.proxy(proxy);
+    }
+    builder.build().map_err(|e| e.to_string())
 }
 
 fn blocking_client() -> Result<reqwest::blocking::Client, String> {
@@ -216,6 +252,16 @@ fn proxy_direct(
         .send()
         .map_err(|e| format!("转发失败: {e}"))?;
 
+    Ok(wrap_upstream(upstream))
+}
+
+/// /img?u= —— 走代理取海报图（TMDb 的图片域名国内直连不通）
+fn image_proxy(raw_url: &str) -> Result<Response<Box<dyn Read + Send>>, String> {
+    let client = proxied_blocking_client()?;
+    let upstream = client
+        .get(raw_url)
+        .send()
+        .map_err(|e| format!("取图失败: {e}"))?;
     Ok(wrap_upstream(upstream))
 }
 

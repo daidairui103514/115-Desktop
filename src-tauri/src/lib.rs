@@ -1,6 +1,8 @@
 mod api115;
 mod download;
+mod settings;
 mod stream;
+mod tmdb;
 mod upload;
 
 use std::path::PathBuf;
@@ -66,6 +68,12 @@ pub fn run() {
             download::download_with_idm,
             download::idm_available,
             stream::stream_base,
+            tmdb::tmdb_search,
+            tmdb::tmdb_poster,
+            tmdb::tmdb_status,
+            tmdb::clear_poster_cache,
+            settings::get_settings,
+            settings::save_settings,
         ])
         .setup(move |app| {
             // 无边框但**不透明**：Windows 上透明窗口会带来白屏、无阴影、

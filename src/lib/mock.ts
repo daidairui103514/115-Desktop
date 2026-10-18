@@ -44,6 +44,10 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { key: "toolbox", name: "工具箱" },
     ],
   },
+  {
+    label: "系统",
+    items: [{ key: "settings", name: "设置" }],
+  },
 ];
 
 export const CURRENT_PATH = ["我的文件", "影视", "4K 蓝光"];

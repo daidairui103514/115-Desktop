@@ -68,3 +68,21 @@ export function previewKind(ext: string): "video" | "audio" | "image" | "other" 
   if (IMAGE_INLINE.includes(lower)) return "image";
   return "other";
 }
+
+/** 把文件名清理成可以拿去搜片名的形式 */
+export function cleanMediaName(raw: string): string {
+  return raw
+    .replace(/\.[^.]+$/, "")
+    .replace(/[._]/g, " ")
+    .replace(/\[[^\]]*\]|\([^)]*\)/g, " ")
+    .replace(
+      /\b(2160p|1080p|720p|480p|4k|8k|bluray|blu-ray|web-dl|webrip|hdtv|remux|x264|x265|h264|h265|hevc|avc|aac|ac3|dts|ddp|hdr|10bit|8bit)\b/gi,
+      " ",
+    )
+    .replace(/\bS\d{1,2}E\d{1,3}\b/gi, " ")
+    .replace(/第\s*\d+\s*[集话期]/g, " ")
+    .replace(/\bEP?\s*\d{1,3}\b/gi, " ")
+    .replace(/\s+\d{1,3}$/, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}

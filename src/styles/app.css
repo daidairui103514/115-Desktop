@@ -2025,3 +2025,16 @@ button {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ---------- 设置页 ---------- */
+.settings-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.tool-card .login__field {
+  margin-top: 12px;
+}
+.tool-card .modal__input {
+  max-width: 520px;
+}

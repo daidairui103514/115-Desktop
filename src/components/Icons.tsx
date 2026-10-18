@@ -16,6 +16,7 @@ export type IconName =
   | "magnet"
   | "film"
   | "wrench"
+  | "settings"
   | "search"
   | "plus"
   | "more"
@@ -114,6 +115,12 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <rect x="1.8" y="3.2" width="12.4" height="9.6" rx="1.4" stroke="currentColor" strokeWidth="1.3" />
       <path d="M5 3.2v9.6M11 3.2v9.6" stroke="currentColor" strokeWidth="1.1" opacity=".55" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M4.9 19.1l1.9-1.9M17.2 6.8l1.9-1.9" />
     </>
   ),
   wrench: (

@@ -12,6 +12,7 @@ import { OfflinePage } from "@/pages/OfflinePage";
 import { RecyclePage } from "@/pages/RecyclePage";
 import { ToolboxPage } from "@/pages/ToolboxPage";
 import { MediaPage } from "@/pages/MediaPage";
+import { SettingsPage } from "@/pages/SettingsPage";
 import { DownloadsPage } from "@/pages/DownloadsPage";
 import { WindowResizer } from "@/components/WindowResizer";
 import { PreviewModal, type PreviewKind } from "@/components/PreviewModal";
@@ -49,6 +50,7 @@ const NAV_TITLE: Record<NavKey, string> = {
   trash: "回收站",
   media: "媒体库",
   toolbox: "工具箱",
+  settings: "设置",
 };
 
 const NAV_MODE: Partial<Record<NavKey, DataMode>> = {
@@ -740,6 +742,8 @@ export default function App() {
             onOpenDir={() => void call("open_download_dir").catch(() => undefined)}
             onClear={() => setTransfers((prev) => prev.filter((task) => !task.done && !task.error))}
           />
+        ) : nav === "settings" ? (
+          <SettingsPage onNotify={notify} />
         ) : nav === "toolbox" ? (
           <ToolboxPage rootCid={currentCid} onNotify={notify} />
         ) : nav === "trash" ? (
