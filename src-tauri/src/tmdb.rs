@@ -9,6 +9,7 @@
 
 use std::time::Duration;
 
+use base64::Engine;
 use serde::Serialize;
 use serde_json::Value;
 use sha1::{Digest, Sha1};
