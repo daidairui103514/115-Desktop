@@ -1,4 +1,5 @@
 mod api115;
+mod download;
 mod upload;
 
 use std::path::PathBuf;
@@ -55,6 +56,10 @@ pub fn run() {
             api115::recycle_revert,
             api115::recycle_clear,
             upload::upload_file,
+            download::download_file,
+            download::default_download_dir,
+            download::open_download_dir,
+            download::file_exists,
         ])
         .setup(move |app| {
             // 无边框但**不透明**：Windows 上透明窗口会带来白屏、无阴影、

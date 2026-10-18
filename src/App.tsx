@@ -11,6 +11,8 @@ import { LoginPage } from "@/pages/LoginPage";
 import { OfflinePage } from "@/pages/OfflinePage";
 import { RecyclePage } from "@/pages/RecyclePage";
 import { ToolboxPage } from "@/pages/ToolboxPage";
+import { MediaPage } from "@/pages/MediaPage";
+import { DownloadsPage } from "@/pages/DownloadsPage";
 import { WindowResizer } from "@/components/WindowResizer";
 import { MOCK_FILES } from "@/lib/mock";
 import { call, isTauri, toFileItem } from "@/lib/bridge";
@@ -22,6 +24,7 @@ import type {
   OfflineTask,
   OpResult,
   RecycleItem,
+  TransferItem,
   UploadResult,
   SortDir,
   SortKey,
@@ -55,8 +58,6 @@ const NAV_MODE: Partial<Record<NavKey, DataMode>> = {
 
 const NAV_NOTICE: Partial<Record<NavKey, string>> = {
   shares: "115 开放平台没有开放分享接口，这个功能暂时做不了。\n需要生成分享链接只能在网页版或官方客户端操作。",
-  downloads: "下载管理还没做。",
-  media: "海报墙媒体库还没做。",
 };
 
 const ROOT = { cid: "0", name: "我的文件" };
@@ -94,6 +95,8 @@ export default function App() {
   const [offline, setOffline] = useState<OfflineTask[]>([]);
   const [recycle, setRecycle] = useState<RecycleItem[]>([]);
   const [recycleBusy, setRecycleBusy] = useState(false);
+  const [transfers, setTransfers] = useState<TransferItem[]>([]);
+  const [offlineBusy, setOfflineBusy] = useState(false);
   const [stack, setStack] = useState<{ cid: string; name: string }[]>([ROOT]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -136,6 +139,37 @@ export default function App() {
   }, [themeMode]);
 
   /* ---------- 数据 ---------- */
+  useEffect(() => {
+    if (!desktop) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const stop = await listen<TransferItem>("download:progress", (event) => {
+          const payload = event.payload;
+          setTransfers((prev) => {
+            const index = prev.findIndex((task) => task.id === payload.id);
+            if (index === -1) return [payload, ...prev];
+            const next = [...prev];
+            next[index] = payload;
+            return next;
+          });
+        });
+        if (cancelled) stop();
+        else unlisten = stop;
+      } catch {
+        /* 浏览器预览没有事件系统 */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [desktop]);
+
   const loadDir = useCallback(async (cid: string, mode: DataMode = "files") => {
     setLoading(true);
     setLoadError("");
@@ -163,6 +197,38 @@ export default function App() {
       setLoading(false);
     }
   }, []);
+
+  const addOffline = useCallback(
+    async (urls: string) => {
+      setOfflineBusy(true);
+      try {
+        await call("offline_add", { urls });
+        await loadOffline();
+        notify("已提交离线任务");
+      } catch (err) {
+        notify(String(err));
+      } finally {
+        setOfflineBusy(false);
+      }
+    },
+    [loadOffline, notify],
+  );
+
+  const deleteOffline = useCallback(
+    async (hash: string) => {
+      setOfflineBusy(true);
+      try {
+        await call("offline_delete", { hash });
+        await loadOffline();
+        notify("已移除任务");
+      } catch (err) {
+        notify(String(err));
+      } finally {
+        setOfflineBusy(false);
+      }
+    },
+    [loadOffline, notify],
+  );
 
   const loadRecycle = useCallback(async () => {
     setLoading(true);
@@ -319,6 +385,30 @@ export default function App() {
     [notify],
   );
 
+  const downloadItem = useCallback(
+    async (item: FileItem) => {
+      if (!item.pickCode) {
+        notify("这个条目没有 pick_code");
+        return;
+      }
+      try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const dir = await open({ directory: true, title: "选择保存位置" });
+        if (!dir || typeof dir !== "string") return;
+        notify(`开始下载：${item.name}`);
+        const saved = await call<string>("download_file", {
+          pc: item.pickCode,
+          name: item.name,
+          saveDir: dir,
+        });
+        notify(`已保存到 ${saved}`);
+      } catch (err) {
+        notify(String(err));
+      }
+    },
+    [notify],
+  );
+
   const playItem = useCallback(
     async (item: FileItem) => {
       if (!item.pickCode) {
@@ -457,6 +547,7 @@ export default function App() {
       actions.push({ label: "在线播放", onClick: () => void playItem(item) });
     }
     if (item.pickCode) {
+      actions.push({ label: "下载到本地", onClick: () => void downloadItem(item) });
       actions.push({ label: "复制下载直链", onClick: () => void copyDownloadUrl(item) });
     }
     const targets = selectedItems.length > 0 ? selectedItems : [item];
@@ -478,7 +569,7 @@ export default function App() {
       onClick: () => setDialog({ type: "delete", items: [item] }),
     });
     return actions;
-  }, [menu, openFolder, playItem, copyDownloadUrl, selectedItems]);
+  }, [menu, openFolder, playItem, downloadItem, copyDownloadUrl, selectedItems]);
 
   const selectedFile = selectedItems.length === 1 ? selectedItems[0] : null;
 
@@ -552,7 +643,26 @@ export default function App() {
         <Sidebar active={nav} onChange={setNav} user={user} />
 
         {nav === "offline" ? (
-          <OfflinePage tasks={offline} loading={loading} error={loadError} />
+          <OfflinePage
+            tasks={offline}
+            loading={loading}
+            error={loadError}
+            busy={offlineBusy}
+            onAdd={(urls) => void addOffline(urls)}
+            onDelete={(hash) => void deleteOffline(hash)}
+          />
+        ) : nav === "media" ? (
+          <MediaPage
+            files={visibleFiles}
+            loading={loading}
+            onPlay={(item) => void playItem(item)}
+          />
+        ) : nav === "downloads" ? (
+          <DownloadsPage
+            tasks={transfers}
+            onOpenDir={() => void call("open_download_dir").catch(() => undefined)}
+            onClear={() => setTransfers((prev) => prev.filter((task) => !task.done && !task.error))}
+          />
         ) : nav === "toolbox" ? (
           <ToolboxPage rootCid={currentCid} onNotify={notify} />
         ) : nav === "trash" ? (
@@ -586,14 +696,17 @@ export default function App() {
         <Inspector
           file={selectedFile}
           onPlay={(item) => void playItem(item)}
-          onDownload={(item) => void copyDownloadUrl(item)}
+          onDownload={(item) => void downloadItem(item)}
           onRename={(item) => setDialog({ type: "rename", item })}
           onDelete={(item) => setDialog({ type: "delete", items: [item] })}
           onOpen={openFolder}
         />
       </div>
 
-      <TransferBar tasks={[]} />
+      <TransferBar
+        tasks={transfers}
+        onOpenDir={desktop ? () => void call("open_download_dir").catch(() => undefined) : undefined}
+      />
 
       {menu ? (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />

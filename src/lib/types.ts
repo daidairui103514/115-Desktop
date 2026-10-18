@@ -71,6 +71,15 @@ export interface OpResult {
   message: string;
 }
 
+export interface TransferItem {
+  id: string;
+  name: string;
+  downloaded: number;
+  total: number;
+  done: boolean;
+  error: string;
+}
+
 export interface UploadResult {
   file_name: string;
   size_text: string;
