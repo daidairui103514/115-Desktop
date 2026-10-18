@@ -1,4 +1,5 @@
 mod api115;
+mod bangumi;
 mod download;
 mod open_login;
 mod player;
@@ -72,6 +73,8 @@ pub fn run() {
             download::idm_available,
             stream::stream_base,
             tmdb::tmdb_search,
+            bangumi::bangumi_search,
+            bangumi::bangumi_poster,
             tmdb::tmdb_poster,
             tmdb::tmdb_status,
             tmdb::clear_poster_cache,

@@ -81,8 +81,18 @@ export function MediaPage({ rootCid, onPlay }: MediaPageProps) {
         const name = names[cursor];
         cursor += 1;
         try {
-          const dataUrl = await call<string>("tmdb_poster", { query: name });
+          let dataUrl = await call<string>("tmdb_poster", { query: name });
           if (cancelled) continue;
+
+          // TMDb 没有就退到 Bangumi（新番、国漫收录更全）
+          if (!dataUrl) {
+            try {
+              dataUrl = await call<string>("bangumi_poster", { query: name });
+            } catch {
+              /* Bangumi 不可用就继续往下 */
+            }
+            if (cancelled) continue;
+          }
 
           if (dataUrl) {
             setPosters((prev) => ({ ...prev, [name]: dataUrl }));
