@@ -1773,3 +1773,26 @@ button {
 .btn-ghost:hover {
   background: var(--hover);
 }
+
+/* ---------- 检查器按钮补充状态 ---------- */
+.inspector__actions {
+  flex-wrap: wrap;
+}
+.inspector__actions button {
+  flex: 1 1 auto;
+  min-width: 62px;
+  padding: 0 8px;
+}
+.inspector__actions button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+.inspector__actions button:disabled:hover {
+  background: var(--bg);
+}
+.inspector__actions button.is-danger {
+  color: #d70015;
+}
+[data-theme="dark"] .inspector__actions button.is-danger {
+  color: #ff6961;
+}

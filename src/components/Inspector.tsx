@@ -4,9 +4,21 @@ import { KIND_LABEL, type FileItem } from "@/lib/types";
 
 interface InspectorProps {
   file: FileItem | null;
+  onPlay: (item: FileItem) => void;
+  onDownload: (item: FileItem) => void;
+  onRename: (item: FileItem) => void;
+  onDelete: (item: FileItem) => void;
+  onOpen: (item: FileItem) => void;
 }
 
-export function Inspector({ file }: InspectorProps) {
+export function Inspector({
+  file,
+  onPlay,
+  onDownload,
+  onRename,
+  onDelete,
+  onOpen,
+}: InspectorProps) {
   if (!file) {
     return (
       <aside className="inspector">
@@ -14,6 +26,10 @@ export function Inspector({ file }: InspectorProps) {
       </aside>
     );
   }
+
+  const isFolder = file.kind === "folder";
+  const playable = file.kind === "video" || file.kind === "iso";
+  const hasLink = Boolean(file.pickCode);
 
   return (
     <aside className="inspector">
@@ -27,21 +43,46 @@ export function Inspector({ file }: InspectorProps) {
 
       <div className="inspector__name">{file.name}</div>
       <div className="inspector__sub">
-        {KIND_LABEL[file.kind]} · {file.sizeText}
+        {KIND_LABEL[file.kind]}
+        {isFolder ? "" : ` · ${file.sizeText}`}
       </div>
 
       <div className="inspector__actions">
-        {file.kind === "video" || file.kind === "iso" ? (
-          <button type="button" className="is-primary">
+        {isFolder ? (
+          <button type="button" className="is-primary" onClick={() => onOpen(file)}>
+            打开
+          </button>
+        ) : playable ? (
+          <button
+            type="button"
+            className="is-primary"
+            onClick={() => onPlay(file)}
+            disabled={!hasLink}
+          >
             <Icon name="play" size={11} /> 播放
           </button>
         ) : (
-          <button type="button" className="is-primary">
-            <Icon name="download" size={12} /> 下载
+          <button
+            type="button"
+            className="is-primary"
+            onClick={() => onDownload(file)}
+            disabled={!hasLink}
+          >
+            <Icon name="download" size={12} /> 取直链
           </button>
         )}
-        <button type="button">分享</button>
-        <button type="button">更多</button>
+
+        {!isFolder ? (
+          <button type="button" onClick={() => onDownload(file)} disabled={!hasLink}>
+            复制链接
+          </button>
+        ) : null}
+        <button type="button" onClick={() => onRename(file)}>
+          重命名
+        </button>
+        <button type="button" className="is-danger" onClick={() => onDelete(file)}>
+          删除
+        </button>
       </div>
 
       <div className="inspector__section">
@@ -58,65 +99,33 @@ export function Inspector({ file }: InspectorProps) {
             <span className="kv__v">{file.duration}</span>
           </div>
         ) : null}
-        {file.codec ? (
+        {file.sizeText ? (
           <div className="kv">
-            <span className="kv__k">编码</span>
-            <span className="kv__v">{file.codec}</span>
+            <span className="kv__k">大小</span>
+            <span className="kv__v">{file.sizeText}</span>
           </div>
         ) : null}
-        {file.audio ? (
-          <div className="kv">
-            <span className="kv__k">音轨</span>
-            <span className="kv__v">{file.audio}</span>
-          </div>
-        ) : null}
-        {file.itemCount ? (
-          <div className="kv">
-            <span className="kv__k">包含</span>
-            <span className="kv__v">{file.itemCount} 项</span>
-          </div>
-        ) : null}
-        <div className="kv">
-          <span className="kv__k">位置</span>
-          <span className="kv__v">我的文件 › 影视 › 4K 蓝光</span>
-        </div>
         {file.sha1 ? (
           <div className="kv">
             <span className="kv__k">SHA1</span>
             <span className="kv__v kv__v--mono">{file.sha1.slice(0, 12)}…</span>
           </div>
         ) : null}
+        {file.pickCode ? (
+          <div className="kv">
+            <span className="kv__k">pick_code</span>
+            <span className="kv__v kv__v--mono">{file.pickCode.slice(0, 12)}…</span>
+          </div>
+        ) : null}
         <div className="kv">
           <span className="kv__k">修改时间</span>
-          <span className="kv__v">{file.modified.replace("T", " ").slice(0, 16)}</span>
+          <span className="kv__v">{file.modified.replace("T", " ").slice(0, 16) || "—"}</span>
         </div>
-        <div className="tag-row">
-          {file.resolution?.includes("3840") ? <span className="tag">原画</span> : null}
-          {file.resolution?.includes("2160") ? <span className="tag">2160p</span> : null}
-          <span className="tag tag--muted">已同步</span>
-        </div>
-      </div>
-
-      <div className="inspector__section">
-        <h4>快捷操作</h4>
-        <div className="kv">
-          <span className="kv__k">生成 ED2K</span>
-          <span className="kv__v" style={{ color: "var(--accent)" }}>
-            批量支持
-          </span>
-        </div>
-        <div className="kv">
-          <span className="kv__k">重命名</span>
-          <span className="kv__v" style={{ color: "var(--accent)" }}>
-            可改后缀
-          </span>
-        </div>
-        <div className="kv">
-          <span className="kv__k">TMDB 匹配</span>
-          <span className="kv__v" style={{ color: "var(--accent)" }}>
-            已识别
-          </span>
-        </div>
+        {file.starred ? (
+          <div className="tag-row">
+            <span className="tag">已星标</span>
+          </div>
+        ) : null}
       </div>
     </aside>
   );

@@ -31,14 +31,6 @@ export function TransferBar({ tasks }: TransferBarProps) {
 
       <div className="transfer__spacer" />
       {active > 0 ? <span className="transfer__speed">{active} 项进行中</span> : null}
-      <button
-        type="button"
-        className="icon-btn"
-        aria-label="传输面板"
-        disabled={tasks.length === 0}
-      >
-        <Icon name="chevron-down" size={14} />
-      </button>
     </footer>
   );
 }

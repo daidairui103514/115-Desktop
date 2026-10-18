@@ -539,6 +539,8 @@ export default function App() {
         query={query}
         onQueryChange={setQuery}
         onNewFolder={() => setDialog({ type: "mkdir" })}
+        onBack={() => goToCrumb(stack.length - 2)}
+        canGoBack={stack.length > 1}
         onUpload={() => void handleUpload()}
         theme={resolvedTheme}
         onToggleTheme={toggleTheme}
@@ -581,7 +583,14 @@ export default function App() {
           />
         )}
 
-        <Inspector file={selectedFile} />
+        <Inspector
+          file={selectedFile}
+          onPlay={(item) => void playItem(item)}
+          onDownload={(item) => void copyDownloadUrl(item)}
+          onRename={(item) => setDialog({ type: "rename", item })}
+          onDelete={(item) => setDialog({ type: "delete", items: [item] })}
+          onOpen={openFolder}
+        />
       </div>
 
       <TransferBar tasks={[]} />

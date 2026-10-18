@@ -11,6 +11,8 @@ interface TitleBarProps {
   query: string;
   onQueryChange: (value: string) => void;
   onNewFolder: () => void;
+  onBack: () => void;
+  canGoBack: boolean;
   onUpload: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
@@ -26,6 +28,8 @@ export function TitleBar({
   query,
   onQueryChange,
   onNewFolder,
+  onBack,
+  canGoBack,
   onUpload,
   theme,
   onToggleTheme,
@@ -39,11 +43,14 @@ export function TitleBar({
       <TrafficLights />
 
       <div className="nav-arrows">
-        <button type="button" className="icon-btn" aria-label="后退">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="返回上一级"
+          onClick={onBack}
+          disabled={!canGoBack}
+        >
           <Icon name="chevron-left" />
-        </button>
-        <button type="button" className="icon-btn" aria-label="前进" disabled>
-          <Icon name="chevron-right" />
         </button>
       </div>
 
@@ -104,10 +111,6 @@ export function TitleBar({
         onClick={onToggleTheme}
       >
         <Icon name={theme === "dark" ? "sun" : "moon"} />
-      </button>
-
-      <button type="button" className="icon-btn" aria-label="更多操作">
-        <Icon name="more" />
       </button>
 
       {user || onLogout ? (
