@@ -1,5 +1,6 @@
 mod api115;
 mod download;
+mod open_login;
 mod player;
 mod settings;
 mod thumbnail;
@@ -76,6 +77,8 @@ pub fn run() {
             tmdb::clear_poster_cache,
             settings::get_settings,
             settings::save_settings,
+            open_login::device_login_start,
+            open_login::device_login_poll,
             player::detect_players,
             player::play_external,
             thumbnail::extract_thumb,

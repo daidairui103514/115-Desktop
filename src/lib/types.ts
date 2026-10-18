@@ -98,6 +98,7 @@ export interface AppSettings {
   proxy: string;
   download_dir: string;
   preferred_quality: string;
+  open_client_id: string;
 }
 
 export interface TmdbHit {

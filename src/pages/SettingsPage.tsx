@@ -133,6 +133,41 @@ export function SettingsPage({ onNotify }: SettingsPageProps) {
 
         <section className="tool-card">
           <div className="tool-card__head">
+            <Icon name="lock" size={16} />
+            <h3>扫码登录（115 开放平台）</h3>
+          </div>
+          <p>
+            填了 AppID 才能在登录页用手机扫码授权，token 会自动续期。
+            去 open.115.com 注册应用即可获取；不填则只能用令牌登录。
+          </p>
+
+          <label className="login__field">
+            <span className="login__field-label">
+              AppID <em>client_id</em>
+            </span>
+            <input
+              className="modal__input"
+              value={settings.open_client_id}
+              spellCheck={false}
+              placeholder="例如 8xxxxxxx-xxxxxxxx"
+              onChange={(event) => patch("open_client_id", event.target.value)}
+            />
+          </label>
+
+          <div className="settings-row">
+            <button
+              type="button"
+              className="modal__btn modal__btn--primary"
+              onClick={() => void save()}
+              disabled={saving}
+            >
+              保存
+            </button>
+          </div>
+        </section>
+
+        <section className="tool-card">
+          <div className="tool-card__head">
             <Icon name="cloud" size={16} />
             <h3>网络</h3>
           </div>

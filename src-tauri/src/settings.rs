@@ -17,6 +17,8 @@ pub struct Settings {
     pub download_dir: String,
     /// 内置 M3U8 播放器画质偏好
     pub preferred_quality: String,
+    /// 115 开放平台应用的 AppID，用于设备码扫码登录
+    pub open_client_id: String,
 }
 
 impl Default for Settings {
@@ -26,6 +28,7 @@ impl Default for Settings {
             proxy: "http://127.0.0.1:10808".into(),
             download_dir: String::new(),
             preferred_quality: "auto".into(),
+            open_client_id: String::new(),
         }
     }
 }
