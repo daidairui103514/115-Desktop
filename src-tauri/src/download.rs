@@ -192,3 +192,58 @@ pub fn open_download_dir(app: tauri::AppHandle) -> Result<(), String> {
 pub fn file_exists(path: String) -> bool {
     Path::new(&path).exists()
 }
+
+// ── IDM 多线程下载 ──────────────────────────────────────
+
+fn find_idman() -> Option<String> {
+    const CANDIDATES: [&str; 4] = [
+        r"C:/Program Files (x86)/Internet Download Manager/IDMan.exe",
+        r"C:/Program Files/Internet Download Manager/IDMan.exe",
+        r"D:/Program Files (x86)/Internet Download Manager/IDMan.exe",
+        r"D:/Program Files/Internet Download Manager/IDMan.exe",
+    ];
+    for path in CANDIDATES {
+        if Path::new(path).exists() {
+            return Some(path.to_string());
+        }
+    }
+    None
+}
+
+/// 交给 IDM 下载。地址用本地代理，代理负责补上 115 要求的 UA，
+/// 这样 IDM 的多线程、断点续传、分段请求都能正常工作。
+#[tauri::command]
+pub fn download_with_idm(pc: String, name: String) -> Result<String, String> {
+    let base = crate::stream::base_url();
+    if base.is_empty() {
+        return Err("本地代理还没启动，请重启程序".into());
+    }
+
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_string())
+        .unwrap_or_else(|| "bin".to_string());
+    let url = format!("{base}/s/{pc}.{ext}");
+
+    let idman = find_idman().ok_or("没找到 IDMan.exe，请确认 IDM 已正确安装")?;
+
+    let mut command = std::process::Command::new(&idman);
+    command.arg("/d").arg(&url).arg("/n").arg("/f").arg(&name);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+
+    command
+        .spawn()
+        .map_err(|e| format!("启动 IDM 失败: {e}"))?;
+
+    Ok(url)
+}
+
+#[tauri::command]
+pub fn idm_available() -> bool {
+    find_idman().is_some()
+}

@@ -35,6 +35,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(api115::AppState::new(data_dir.clone()))
         .invoke_handler(tauri::generate_handler![
             api115::login_with_token,
@@ -61,6 +62,8 @@ pub fn run() {
             download::default_download_dir,
             download::open_download_dir,
             download::file_exists,
+            download::download_with_idm,
+            download::idm_available,
             stream::stream_base,
         ])
         .setup(move |app| {

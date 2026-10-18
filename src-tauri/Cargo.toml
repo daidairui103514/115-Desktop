@@ -18,6 +18,7 @@ tauri-plugin-http = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "stream", "blocking"] }
@@ -29,6 +30,8 @@ hex = "0.4"
 httpdate = "1"
 futures-util = "0.3"
 tiny_http = "0.12"
+url = "2"
+urlencoding = "2"
 
 [profile.release]
 codegen-units = 1

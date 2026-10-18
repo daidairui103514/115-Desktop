@@ -63,6 +63,12 @@ const NAV_NOTICE: Partial<Record<NavKey, string>> = {
 
 const ROOT = { cid: "0", name: "我的文件" };
 
+/** 这些扩展名优先尝试 115 的 HLS 转码流 */
+const VIDEO_EXTS = [
+  "mp4", "mkv", "avi", "mov", "wmv", "flv", "ts", "m2ts", "mts",
+  "rmvb", "rm", "m4v", "webm", "iso", "3gp", "vob", "asf",
+];
+
 type DialogState =
   | { type: "rename"; item: FileItem }
   | { type: "mkdir" }
@@ -98,7 +104,12 @@ export default function App() {
   const [recycleBusy, setRecycleBusy] = useState(false);
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const [offlineBusy, setOfflineBusy] = useState(false);
-  const [preview, setPreview] = useState<{ item: FileItem; url: string; kind: PreviewKind } | null>(null);
+  const [preview, setPreview] = useState<{
+    item: FileItem;
+    url: string;
+    hlsUrl?: string;
+    kind: PreviewKind;
+  } | null>(null);
   const [stack, setStack] = useState<{ cid: string; name: string }[]>([ROOT]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -424,16 +435,55 @@ export default function App() {
           return;
         }
         const ext = (item.name.split(".").pop() ?? "").toLowerCase();
-        const url = `${base}/s/${item.pickCode}.${ext}`;
-        const kind = previewKind(ext);
+        const directUrl = `${base}/s/${item.pickCode}.${ext}`;
 
+        // 视频优先走 115 的 HLS：云端已转码，mkv/avi/iso 都能播
+        if (VIDEO_EXTS.includes(ext)) {
+          try {
+            const m3u8 = await call<string>("video_play_url", { pc: item.pickCode });
+            setPreview({
+              item,
+              url: directUrl,
+              hlsUrl: `${base}/hls?u=${encodeURIComponent(m3u8)}`,
+              kind: "video",
+            });
+            return;
+          } catch {
+            /* 未转码或接口失败，回退 */
+          }
+
+          if (previewKind(ext) === "video") {
+            setPreview({ item, url: directUrl, kind: "video" });
+            return;
+          }
+
+          const { openUrl } = await import("@tauri-apps/plugin-opener");
+          await openUrl(directUrl);
+          notify("这个格式需要先在 115 云端转码，已交给系统程序");
+          return;
+        }
+
+        const kind = previewKind(ext);
         if (kind === "other") {
           const { openUrl } = await import("@tauri-apps/plugin-opener");
-          await openUrl(url);
+          await openUrl(directUrl);
           notify("这个格式没法内嵌预览，已交给系统程序");
           return;
         }
-        setPreview({ item, url, kind });
+        setPreview({ item, url: directUrl, kind });
+      } catch (err) {
+        notify(String(err));
+      }
+    },
+    [notify],
+  );
+
+  const downloadWithIdm = useCallback(
+    async (item: FileItem) => {
+      if (!item.pickCode) return;
+      try {
+        await call("download_with_idm", { pc: item.pickCode, name: item.name });
+        notify("已推送到 IDM，多线程下载中");
       } catch (err) {
         notify(String(err));
       }
@@ -574,7 +624,8 @@ export default function App() {
       });
     }
     if (item.pickCode) {
-      actions.push({ label: "下载到本地", onClick: () => void downloadItem(item) });
+      actions.push({ label: "用 IDM 下载", onClick: () => void downloadWithIdm(item) });
+      actions.push({ label: "内置下载", onClick: () => void downloadItem(item) });
       actions.push({ label: "复制下载直链", onClick: () => void copyDownloadUrl(item) });
     }
     const targets = selectedItems.length > 0 ? selectedItems : [item];
@@ -596,7 +647,7 @@ export default function App() {
       onClick: () => setDialog({ type: "delete", items: [item] }),
     });
     return actions;
-  }, [menu, openFolder, playItem, downloadItem, copyDownloadUrl, selectedItems]);
+  }, [menu, openFolder, playItem, downloadItem, downloadWithIdm, copyDownloadUrl, selectedItems]);
 
   const selectedFile = selectedItems.length === 1 ? selectedItems[0] : null;
 
@@ -787,6 +838,7 @@ export default function App() {
         <PreviewModal
           item={preview.item}
           url={preview.url}
+          hlsUrl={preview.hlsUrl}
           kind={preview.kind}
           onClose={() => setPreview(null)}
           onOpenExternal={() => void openExternal()}
